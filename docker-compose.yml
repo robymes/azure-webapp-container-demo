@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  fastapi-app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount Azure Storage as persistent volume
+      # In Azure Web App, this will be mapped to Azure File Share
+      - persistent_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  persistent_data:
+    # This volume will be mapped to Azure Storage File Share
+    # The actual configuration is done through Azure Web App settings
+    driver: local
