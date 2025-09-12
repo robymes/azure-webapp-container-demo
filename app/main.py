@@ -4,15 +4,16 @@ from datetime import datetime
 import os
 import json
 from pathlib import Path
+from typing import Optional
+from dwh import init_dwh, execute_query
 
 app = FastAPI(title="Hello World File Writer API", version="1.0.0")
 
 # Configure the persistent volume path
 PERSISTENT_VOLUME_PATH = "/data"
-
 class WriteFileRequest(BaseModel):
     content: str
-    filename: str = None
+    filename: Optional[str] = None
 
 class WriteFileResponse(BaseModel):
     message: str
@@ -137,6 +138,31 @@ async def read_file(filename: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+
+@app.post("/init-dwh")
+async def init_data_warehouse():
+    """Initialize the data warehouse"""
+    try:
+        init_dwh()
+        return {
+            "message": "Data warehouse initialized successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error initializing data warehouse: {str(e)}")
+
+@app.get("/query")
+async def execute_analytics_query():
+    """Execute analytics query and return results"""
+    try:
+        result = execute_query()
+        return {
+            "message": "Query executed successfully",
+            "timestamp": datetime.now().isoformat(),
+            "data": result.to_dict('records') if hasattr(result, 'to_dict') else result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,9 +1,9 @@
 [database]
-ducklake_path = "ecommerce_analytics.ducklake"
-data_path = "lakehouse/"
+ducklake_path = "/data/ecommerce_analytics.ducklake"
+data_path = "/data/lakehouse/"
 
 [parquet_files]
-base_path = "archive/parquet/"
+base_path = "/data/archive/parquet/"
 
 [parquet_files.files]
 customers = "customers.parquet"
