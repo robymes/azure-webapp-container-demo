@@ -9,9 +9,9 @@ services:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
     volumes:
-      # Mount Azure Storage as persistent volume
-      # In Azure Web App, this will be mapped to Azure File Share
-      - persistent_data:/data
+      # Mount local host directory as persistent volume
+      # This creates a bind mount between host and container
+      - ./data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -25,8 +25,4 @@ services:
         max-size: "10m"
         max-file: "3"
 
-volumes:
-  persistent_data:
-    # This volume will be mapped to Azure Storage File Share
-    # The actual configuration is done through Azure Web App settings
-    driver: local
+# No need for named volumes section when using bind mounts

@@ -1,0 +1,26 @@
+[database]
+ducklake_path = "ecommerce_analytics.ducklake"
+data_path = "lakehouse/"
+
+[parquet_files]
+base_path = "archive/parquet/"
+
+[parquet_files.files]
+customers = "customers.parquet"
+products = "products.parquet"
+orders = "orders.parquet"
+order_items = "order_items.parquet"
+product_reviews = "product_reviews.parquet"
+
+[tables]
+customers = "customers"
+products = "products"
+orders = "orders"
+order_items = "order_items"
+product_reviews = "product_reviews"
+
+[analytics]
+top_countries_limit = 10
+
+[display]
+results_title = "Top-selling products by country:"
