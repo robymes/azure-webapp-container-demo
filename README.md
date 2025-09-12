@@ -15,6 +15,8 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 ```
 ├── app/
 │   ├── main.py              # FastAPI application
+│   ├── dwh.py               # Data warehouse module with DuckDB integration
+│   ├── config.toml          # Configuration file for database and analytics
 │   └── requirements.txt     # Python dependencies
 ├── azure-scripts/
 │   ├── provider.tf             # Terraform provider configuration
@@ -25,6 +27,8 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 │   └── terraform-cleanup.sh    # Resource cleanup script
 ├── docker-compose.yml       # Container orchestration
 ├── Dockerfile              # Container definition
+├── test-api.sh             # Comprehensive API testing script
+├── test-aip.rest           # REST client test file
 └── README.md               # This file
 ```
 
@@ -36,6 +40,15 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 - **POST /write-file**: Write content to persistent storage
 - **GET /list-files**: List all files in persistent storage
 - **GET /read-file/{filename}**: Read file content from storage
+- **POST /init-dwh**: Initialize the data warehouse with DuckDB and DuckLake
+- **GET /query**: Execute analytics queries on e-commerce data
+
+### Data Warehouse Features
+- **DuckDB Integration**: High-performance analytical database
+- **DuckLake Extension**: Data lakehouse functionality
+- **TOML Configuration**: Flexible configuration management
+- **Analytics Queries**: Pre-built e-commerce analytics with customer demographics
+- **Parquet Support**: Direct querying of Parquet files
 
 ### Infrastructure
 - Resource Group with all components
@@ -113,6 +126,26 @@ curl https://your-webapp-url.azurewebsites.net/list-files
 
 # Read file
 curl https://your-webapp-url.azurewebsites.net/read-file/test.txt
+
+# Initialize data warehouse
+curl -X POST https://your-webapp-url.azurewebsites.net/init-dwh
+
+# Execute analytics query
+curl https://your-webapp-url.azurewebsites.net/query
+```
+
+### Automated Testing
+Use the provided test script for comprehensive API testing:
+
+```bash
+# Test locally
+./test-api.sh
+
+# Test deployed application
+./test-api.sh https://your-webapp-url.azurewebsites.net
+
+# See all available options
+./test-api.sh --help
 ```
 
 ## 🔄 Redeployment
@@ -152,6 +185,13 @@ docker-compose up --build
 curl -X POST "http://localhost:8000/write-file" \
   -H "Content-Type: application/json" \
   -d '{"content":"Hello Local World!","filename":"local-test.txt"}'
+
+# Test data warehouse functionality
+curl -X POST "http://localhost:8000/init-dwh"
+curl "http://localhost:8000/query"
+
+# Or use the test script
+./test-api.sh
 ```
 
 ## 📊 Monitoring and Logs
@@ -174,6 +214,44 @@ az monitor app-insights component create \
   --location "West Europe" \
   --resource-group rg-fastapi-webapp
 ```
+
+## 🗃️ Data Warehouse Configuration
+
+### Configuration File (config.toml)
+The application uses TOML configuration for flexible data warehouse setup:
+
+```toml
+[database]
+ducklake_path = "/data/ecommerce_analytics.ducklake"
+data_path = "/data/lakehouse/"
+
+[parquet_files]
+base_path = "/data/archive/parquet/"
+
+[parquet_files.files]
+customers = "customers.parquet"
+products = "products.parquet"
+orders = "orders.parquet"
+order_items = "order_items.parquet"
+product_reviews = "product_reviews.parquet"
+
+[tables]
+customers = "customers"
+products = "products"
+orders = "orders"
+order_items = "order_items"
+product_reviews = "product_reviews"
+
+[analytics]
+top_countries_limit = 10
+```
+
+### Data Warehouse Features
+- **DuckDB**: Fast analytical processing
+- **DuckLake**: Data lakehouse with ACID transactions
+- **Parquet Integration**: Direct querying of Parquet files
+- **E-commerce Analytics**: Pre-built queries for sales analysis
+- **Customer Demographics**: Gender-based analytics and insights
 
 ## 🔧 Configuration
 
@@ -300,11 +378,25 @@ cd azure-scripts
 - **Basic**: `GET /` - Returns simple status
 - **Detailed**: `GET /health` - Includes storage accessibility
 
+### Data Warehouse Endpoints
+- **Initialize**: `POST /init-dwh` - Set up DuckDB and create tables
+- **Analytics**: `GET /query` - Execute pre-built analytics queries
+
+### Testing Tools
+- **Bash Script**: [`test-api.sh`](test-api.sh) - Comprehensive endpoint testing
+- **REST Client**: [`test-aip.rest`](test-aip.rest) - Visual Studio Code REST client tests
+
 ## 📚 API Documentation
 
 Once deployed, access the interactive API documentation:
 - **Swagger UI**: `https://your-webapp-url.azurewebsites.net/docs`
 - **ReDoc**: `https://your-webapp-url.azurewebsites.net/redoc`
+
+### Sample API Workflow
+1. **Health Check**: `GET /health` - Verify application and storage status
+2. **Initialize DWH**: `POST /init-dwh` - Set up data warehouse tables
+3. **Run Analytics**: `GET /query` - Execute e-commerce analytics
+4. **File Operations**: Use `/write-file`, `/list-files`, `/read-file` for data management
 
 ## 🔄 CI/CD Integration
 

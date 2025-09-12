@@ -1,7 +1,7 @@
 variable "resource_group_name" {
   description = "Name of the resource group"
   type        = string
-  default     = "rg-fastapi-webapp"
+  default     = "jkl-open-data-platform"
 }
 
 variable "location" {
@@ -13,7 +13,7 @@ variable "location" {
 variable "app_service_plan_name" {
   description = "Name of the App Service Plan"
   type        = string
-  default     = "asp-fastapi-webapp"
+  default     = "jkl-odp-fastapi-plan"
 }
 
 variable "app_service_plan_sku" {
@@ -25,25 +25,25 @@ variable "app_service_plan_sku" {
 variable "web_app_name_prefix" {
   description = "Prefix for the Web App name (timestamp will be appended)"
   type        = string
-  default     = "fastapi-webapp"
+  default     = "jkl-odp-fastapi-webapp"
 }
 
 variable "storage_account_name_prefix" {
   description = "Prefix for the Storage Account name (random suffix will be appended)"
   type        = string
-  default     = "stfastapi"
+  default     = "jklodpstg"
 }
 
 variable "file_share_name" {
   description = "Name of the Azure File Share"
   type        = string
-  default     = "fastapi-data"
+  default     = "jkl-odp-fileshare"
 }
 
 variable "file_share_quota" {
   description = "Quota for the Azure File Share in GB"
   type        = number
-  default     = 1
+  default     = 3
 }
 
 variable "storage_account_tier" {
@@ -81,7 +81,7 @@ variable "tags" {
   type        = map(string)
   default = {
     Environment = "Development"
-    Project     = "FastAPI-WebApp"
+    Project     = "J-ODP"
     ManagedBy   = "Terraform"
   }
 }
