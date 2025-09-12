@@ -85,3 +85,15 @@ variable "tags" {
     ManagedBy   = "Terraform"
   }
 }
+
+variable "enable_infrastructure_encryption" {
+  description = "Enable infrastructure encryption for storage account"
+  type        = bool
+  default     = true
+}
+
+variable "allow_shared_key_access" {
+  description = "Allow shared key access to storage account"
+  type        = bool
+  default     = false
+}

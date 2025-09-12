@@ -257,11 +257,19 @@ top_countries_limit = 10
 
 ### Terraform Variables
 You can customize the deployment by modifying variables in `variables.tf`:
+
+#### Infrastructure Variables
 - `resource_group_name`: Name of the resource group (default: "rg-fastapi-webapp")
 - `location`: Azure region (default: "West Europe")
 - `app_service_plan_sku`: SKU for App Service Plan (default: "B1")
 - `web_app_name_prefix`: Prefix for Web App name
 - `storage_account_name_prefix`: Prefix for Storage Account name
+
+#### Security Variables
+- `enable_infrastructure_encryption`: Enable double encryption for storage account (default: `true`)
+- `allow_shared_key_access`: Allow shared key access to storage account (default: `false`)
+
+**Security Recommendation**: Keep the default security values (`enable_infrastructure_encryption = true`, `allow_shared_key_access = false`) for production environments.
 
 ### Environment Variables
 The application supports these environment variables:
@@ -287,11 +295,17 @@ az appservice plan update \
 
 ### Resources Created
 - **Resource Group**: Contains all Azure resources
-- **Storage Account**: With randomly generated suffix for uniqueness
+- **Storage Account**: With randomly generated suffix for uniqueness and security policies applied
+  - Infrastructure encryption enabled (double encryption)
+  - Shared key access disabled (uses Managed Identity)
+  - Network access restricted (Deny by default, allow Azure services)
 - **Azure File Share**: For persistent data storage
 - **App Service Plan**: Linux-based plan with configurable SKU
-- **Linux Web App**: Container-ready with Docker support
-- **Storage Mount**: Automatically configured for `/data` path
+- **Linux Web App**: Container-ready with Docker support and System-Assigned Managed Identity
+- **Storage Mount**: Automatically configured for `/data` path using Managed Identity
+- **RBAC Role Assignments**:
+  - `Storage File Data SMB Share Contributor` - for file share access
+  - `Storage Account Contributor` - for storage account operations
 
 ### Terraform State Management
 - State is stored locally by default
@@ -327,10 +341,68 @@ terraform destroy
 
 ## 🔒 Security Considerations
 
-1. **Storage Access**: Uses Azure Storage Account keys (consider using Managed Identity)
-2. **HTTPS**: Automatically enabled for `*.azurewebsites.net` domains
-3. **Container Security**: Uses official Python slim image
-4. **Network**: App runs in Azure's secure network environment
+### Azure Security Policies Implementation
+
+This infrastructure implements Azure security best practices with two key policies:
+
+#### 1. **Storage Accounts Prevent Shared Key Access**
+- **Policy**: `shared_access_key_enabled = false`
+- **Configuration**: Configurable via `allow_shared_key_access` variable (defaults to `false`)
+- **Security Benefit**: Eliminates the risk of compromised access keys by disabling shared key authentication
+- **Authentication Method**: Uses **Managed Identity** instead of access keys
+
+#### 2. **Storage Accounts with Infrastructure Encryption**
+- **Policy**: `infrastructure_encryption_enabled = true`
+- **Configuration**: Configurable via `enable_infrastructure_encryption` variable (defaults to `true`)
+- **Security Benefit**: Provides **double encryption** - encryption at service level AND infrastructure level
+- **Compliance**: Meets enterprise security requirements for data protection
+
+### Managed Identity Configuration
+
+The Web App uses **System-Assigned Managed Identity** for secure storage access:
+
+```hcl
+# Web App with Managed Identity
+identity {
+  type = "SystemAssigned"
+}
+
+# RBAC Role Assignments
+resource "azurerm_role_assignment" "storage_file_data_smb_share_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage File Data SMB Share Contributor"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
+}
+```
+
+### Security Features Summary
+1. **Managed Identity Authentication**: No stored credentials or access keys
+2. **Infrastructure Encryption**: Double encryption for data at rest
+3. **Network Isolation**: Storage with restricted network access (`default_action = "Deny"`)
+4. **HTTPS**: Automatically enabled for `*.azurewebsites.net` domains
+5. **Container Security**: Uses official Python slim image
+6. **Azure Network**: App runs in Azure's secure network environment
+7. **RBAC**: Principle of least privilege with specific role assignments
+
+### Security Variables Configuration
+
+You can customize security settings in `variables.tf`:
+
+```hcl
+variable "enable_infrastructure_encryption" {
+  description = "Enable infrastructure encryption for storage account"
+  type        = bool
+  default     = true
+}
+
+variable "allow_shared_key_access" {
+  description = "Allow shared key access to storage account"
+  type        = bool
+  default     = false
+}
+```
+
+**Important**: Changing `allow_shared_key_access` to `true` will disable the security policy and revert to less secure access key authentication.
 
 ## 💰 Cost Estimation
 

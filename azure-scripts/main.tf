@@ -20,10 +20,13 @@ resource "azurerm_storage_account" "main" {
   account_replication_type = var.storage_account_replication_type
   account_kind            = "StorageV2"
   
-  # Disable public access to comply with Azure policy
+  # Policy 1: Storage accounts should prevent shared key access
   public_network_access_enabled     = false
   allow_nested_items_to_be_public   = false
-  shared_access_key_enabled         = true
+  shared_access_key_enabled         = var.allow_shared_key_access
+  
+  # Policy 2: Storage accounts should have infrastructure encryption
+  infrastructure_encryption_enabled = var.enable_infrastructure_encryption
   
   # Network rules to restrict access
   network_rules {
@@ -59,6 +62,11 @@ resource "azurerm_linux_web_app" "main" {
   location            = azurerm_service_plan.main.location
   service_plan_id     = azurerm_service_plan.main.id
 
+  # Enable managed identity for secure access to storage
+  identity {
+    type = "SystemAssigned"
+  }
+
   site_config {
     application_stack {
       docker_image_name   = "fastapi-app:latest"
@@ -80,12 +88,11 @@ resource "azurerm_linux_web_app" "main" {
     PYTHONUNBUFFERED = "1"
   }
 
-  # Storage configuration for persistent data
+  # Storage configuration for persistent data using managed identity
   storage_account {
     name         = "persistent_data"
     type         = "AzureFiles"
     account_name = azurerm_storage_account.main.name
-    access_key   = azurerm_storage_account.main.primary_access_key
     share_name   = azurerm_storage_share.main.name
     mount_path   = "/data"
   }
@@ -122,4 +129,18 @@ resource "azurerm_linux_web_app_slot" "staging" {
   app_settings = azurerm_linux_web_app.main.app_settings
 
   tags = var.tags
+}
+
+# Role assignment for Web App managed identity to access storage
+resource "azurerm_role_assignment" "storage_file_data_smb_share_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage File Data SMB Share Contributor"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
+}
+
+# Role assignment for Web App managed identity to read storage account
+resource "azurerm_role_assignment" "storage_account_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage Account Contributor"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
 }
