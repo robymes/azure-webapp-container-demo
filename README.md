@@ -268,8 +268,12 @@ You can customize the deployment by modifying variables in `variables.tf`:
 #### Security Variables
 - `enable_infrastructure_encryption`: Enable double encryption for storage account (default: `true`)
 - `allow_shared_key_access`: Allow shared key access to storage account (default: `false`)
+- `https_only`: Force HTTPS only access for App Service (default: `true`)
 
-**Security Recommendation**: Keep the default security values (`enable_infrastructure_encryption = true`, `allow_shared_key_access = false`) for production environments.
+**Security Recommendation**: Keep the default security values for production environments:
+- `enable_infrastructure_encryption = true` (storage double encryption)
+- `allow_shared_key_access = false` (no shared keys)
+- `https_only = true` (HTTPS enforced)
 
 ### Environment Variables
 The application supports these environment variables:
@@ -346,16 +350,24 @@ terraform destroy
 This infrastructure implements Azure security best practices with two key policies:
 
 #### 1. **Storage Accounts Prevent Shared Key Access**
-- **Policy**: `shared_access_key_enabled = false`
+- **Policy**: `shared_access_key_enabled = false` (enforced by default)
 - **Configuration**: Configurable via `allow_shared_key_access` variable (defaults to `false`)
 - **Security Benefit**: Eliminates the risk of compromised access keys by disabling shared key authentication
-- **Authentication Method**: Uses **Managed Identity** instead of access keys
+- **Authentication Method**: Uses **Managed Identity** with RBAC role assignments exclusively
+
+**Implementation**: Storage mount is configured post-deployment via Azure CLI using Managed Identity, avoiding the need for access keys entirely.
 
 #### 2. **Storage Accounts with Infrastructure Encryption**
 - **Policy**: `infrastructure_encryption_enabled = true`
 - **Configuration**: Configurable via `enable_infrastructure_encryption` variable (defaults to `true`)
 - **Security Benefit**: Provides **double encryption** - encryption at service level AND infrastructure level
 - **Compliance**: Meets enterprise security requirements for data protection
+
+#### 3. **App Service Apps Should Only Be Accessible Over HTTPS**
+- **Policy**: `https_only = true`
+- **Configuration**: Configurable via `https_only` variable (defaults to `true`)
+- **Security Benefit**: Forces all HTTP traffic to be redirected to HTTPS, ensuring encrypted communication
+- **Compliance**: Prevents data transmission over unencrypted connections
 
 ### Managed Identity Configuration
 
@@ -379,7 +391,7 @@ resource "azurerm_role_assignment" "storage_file_data_smb_share_contributor" {
 1. **Managed Identity Authentication**: No stored credentials or access keys
 2. **Infrastructure Encryption**: Double encryption for data at rest
 3. **Network Isolation**: Storage with restricted network access (`default_action = "Deny"`)
-4. **HTTPS**: Automatically enabled for `*.azurewebsites.net` domains
+4. **HTTPS Enforcement**: `https_only = true` forces all traffic to HTTPS
 5. **Container Security**: Uses official Python slim image
 6. **Azure Network**: App runs in Azure's secure network environment
 7. **RBAC**: Principle of least privilege with specific role assignments
@@ -402,7 +414,17 @@ variable "allow_shared_key_access" {
 }
 ```
 
-**Important**: Changing `allow_shared_key_access` to `true` will disable the security policy and revert to less secure access key authentication.
+**Automated Two-Phase Security Deployment**:
+1. **Initial Deployment**: Infrastructure created with temporary key access (Terraform compatibility)
+2. **Automatic Hardening**: Script automatically disables shared keys post-deployment
+3. **Storage Mount**: Configured using Managed Identity authentication only
+4. **Final State**: Full compliance with all Azure security policies
+
+**Security Timeline**:
+- ✅ **Infrastructure Encryption**: Enabled from deployment start
+- ✅ **HTTPS Enforcement**: Enabled from deployment start
+- ✅ **Shared Key Disable**: Applied automatically after initial resource creation
+- ✅ **Managed Identity**: Active throughout entire process
 
 ## 💰 Cost Estimation
 

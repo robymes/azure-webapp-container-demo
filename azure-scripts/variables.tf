@@ -19,7 +19,7 @@ variable "app_service_plan_name" {
 variable "app_service_plan_sku" {
   description = "SKU for the App Service Plan"
   type        = string
-  default     = "B1"
+  default     = "S1"
 }
 
 variable "web_app_name_prefix" {
@@ -93,7 +93,25 @@ variable "enable_infrastructure_encryption" {
 }
 
 variable "allow_shared_key_access" {
-  description = "Allow shared key access to storage account"
+  description = "Allow shared key access to storage account. Always false for security compliance."
   type        = bool
   default     = false
+}
+
+variable "https_only" {
+  description = "Force HTTPS only access for App Service"
+  type        = bool
+  default     = true
+}
+
+variable "allow_public_network_access" {
+  description = "Allow public network access to storage account. Always false for security compliance."
+  type        = bool
+  default     = false
+}
+
+variable "enable_network_restriction" {
+  description = "Enable network access restrictions with Azure Services bypass"
+  type        = bool
+  default     = true
 }

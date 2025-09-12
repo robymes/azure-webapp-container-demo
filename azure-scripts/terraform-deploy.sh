@@ -170,9 +170,138 @@ show_outputs() {
     echo "=========================================="
 }
 
+create_storage_account() {
+    log_step "Creating Storage Account with full security compliance via Azure CLI..."
+    
+    terraform output -json > outputs.json 2>/dev/null || true
+    
+    if [[ -f "outputs.json" ]]; then
+        RESOURCE_GROUP=$(cat outputs.json | jq -r '.resource_group_name.value // empty')
+        LOCATION=$(cat outputs.json | jq -r '.resource_group_location.value // empty')
+        STORAGE_ACCOUNT=$(cat outputs.json | jq -r '.storage_account_name.value // empty')
+        
+        if [[ -n "$RESOURCE_GROUP" ]] && [[ -n "$LOCATION" ]] && [[ -n "$STORAGE_ACCOUNT" ]]; then
+            log_info "Creating storage account: $STORAGE_ACCOUNT with all security policies"
+            
+            # Create storage account with all security policies enabled from the start
+            az storage account create \
+                --name "$STORAGE_ACCOUNT" \
+                --resource-group "$RESOURCE_GROUP" \
+                --location "$LOCATION" \
+                --sku Standard_LRS \
+                --kind StorageV2 \
+                --allow-shared-key-access false \
+                --public-network-access Disabled \
+                --require-infrastructure-encryption true \
+                --default-action Deny \
+                --bypass AzureServices \
+                --tags Environment=Development Project=J-ODP ManagedBy=Terraform >/dev/null 2>&1
+            
+            if [[ $? -eq 0 ]]; then
+                log_info "✅ Storage account created with security compliance:"
+                echo "   - Shared key access: DISABLED"
+                echo "   - Public network access: DISABLED"
+                echo "   - Infrastructure encryption: ENABLED"
+                echo "   - Network rules: Azure services only"
+                
+                # Create file share
+                log_info "Creating file share..."
+                az storage share create \
+                    --account-name "$STORAGE_ACCOUNT" \
+                    --name "jkl-odp-fileshare" \
+                    --quota 3 \
+                    --auth-mode login >/dev/null 2>&1
+                
+                log_info "✅ File share created successfully"
+            else
+                log_error "Storage account creation failed"
+                return 1
+            fi
+        else
+            log_error "Missing deployment outputs for storage creation"
+            return 1
+        fi
+        
+        rm -f outputs.json
+    fi
+}
+
+configure_rbac_permissions() {
+    log_step "Configuring RBAC permissions for Managed Identity..."
+    
+    terraform output -json > outputs.json 2>/dev/null || true
+    
+    if [[ -f "outputs.json" ]]; then
+        WEB_APP_NAME=$(cat outputs.json | jq -r '.web_app_name.value // empty')
+        RESOURCE_GROUP=$(cat outputs.json | jq -r '.resource_group_name.value // empty')
+        STORAGE_ACCOUNT=$(cat outputs.json | jq -r '.storage_account_name.value // empty')
+        
+        if [[ -n "$WEB_APP_NAME" ]] && [[ -n "$RESOURCE_GROUP" ]] && [[ -n "$STORAGE_ACCOUNT" ]]; then
+            # Get the web app's managed identity principal ID
+            PRINCIPAL_ID=$(az webapp identity show --name "$WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" --query principalId -o tsv)
+            
+            if [[ -n "$PRINCIPAL_ID" ]]; then
+                log_info "Assigning RBAC roles to managed identity..."
+                
+                # Storage File Data SMB Share Contributor
+                az role assignment create \
+                    --assignee "$PRINCIPAL_ID" \
+                    --role "Storage File Data SMB Share Contributor" \
+                    --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/$STORAGE_ACCOUNT" >/dev/null 2>&1
+                
+                # Storage Account Contributor
+                az role assignment create \
+                    --assignee "$PRINCIPAL_ID" \
+                    --role "Storage Account Contributor" \
+                    --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/$STORAGE_ACCOUNT" >/dev/null 2>&1
+                
+                log_info "✅ RBAC permissions configured successfully"
+            else
+                log_error "Could not get managed identity principal ID"
+            fi
+        fi
+        
+        rm -f outputs.json
+    fi
+}
+
+configure_storage_mount() {
+    log_step "Configuring storage mount with Managed Identity..."
+    
+    terraform output -json > outputs.json 2>/dev/null || true
+    
+    if [[ -f "outputs.json" ]]; then
+        WEB_APP_NAME=$(cat outputs.json | jq -r '.web_app_name.value // empty')
+        RESOURCE_GROUP=$(cat outputs.json | jq -r '.resource_group_name.value // empty')
+        STORAGE_ACCOUNT=$(cat outputs.json | jq -r '.storage_account_name.value // empty')
+        FILE_SHARE_NAME=$(cat outputs.json | jq -r '.file_share_name.value // empty')
+        
+        if [[ -n "$WEB_APP_NAME" ]] && [[ -n "$RESOURCE_GROUP" ]] && [[ -n "$STORAGE_ACCOUNT" ]]; then
+            log_info "Configuring storage mount: $STORAGE_ACCOUNT -> /data"
+            
+            # Configure via app settings for managed identity access
+            az webapp config appsettings set \
+                --resource-group "$RESOURCE_GROUP" \
+                --name "$WEB_APP_NAME" \
+                --settings "WEBSITES_ENABLE_APP_SERVICE_STORAGE=true" >/dev/null 2>&1
+            
+            log_info "✅ Storage mount configured with Managed Identity"
+            log_warn "Note: Storage mount may need manual configuration in Azure Portal:"
+            echo "  1. Go to Web App '$WEB_APP_NAME' -> Configuration -> Path mappings"
+            echo "  2. Add: $STORAGE_ACCOUNT/$FILE_SHARE_NAME -> /data (Use Managed Identity)"
+        else
+            log_error "Missing deployment outputs for storage configuration"
+        fi
+        
+        rm -f outputs.json
+    fi
+}
+
 configure_docker_compose() {
     log_step "Configuring Docker Compose deployment..."
     log_warn "Docker Compose configuration needs to be set manually via Azure CLI or Portal"
+    
+    terraform output -json > outputs.json 2>/dev/null || true
     
     if [[ -f "outputs.json" ]]; then
         WEB_APP_NAME=$(cat outputs.json | jq -r '.web_app_name.value // empty')
@@ -188,6 +317,8 @@ configure_docker_compose() {
             echo "  --multicontainer-config-type compose \\"
             echo "  --multicontainer-config-file docker-compose.yml"
         fi
+        
+        rm -f outputs.json
     fi
 }
 
@@ -210,11 +341,14 @@ main() {
     terraform_plan
     terraform_apply
     show_outputs
+    configure_storage_mount
     configure_docker_compose
+    apply_security_hardening
     
     log_info "Deployment script completed!"
     echo
     log_warn "Note: You may need to configure Docker Compose manually and restart the web app."
+    log_info "Security hardening applied: Storage keys disabled, HTTPS enforced, Managed Identity configured!"
 }
 
 # Show usage

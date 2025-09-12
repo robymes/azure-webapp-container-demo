@@ -11,38 +11,9 @@ resource "azurerm_resource_group" "main" {
   tags     = var.tags
 }
 
-# Create Storage Account
-resource "azurerm_storage_account" "main" {
-  name                     = "${var.storage_account_name_prefix}${random_integer.suffix.result}"
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
-  account_tier             = var.storage_account_tier
-  account_replication_type = var.storage_account_replication_type
-  account_kind            = "StorageV2"
-  
-  # Policy 1: Storage accounts should prevent shared key access
-  public_network_access_enabled     = false
-  allow_nested_items_to_be_public   = false
-  shared_access_key_enabled         = var.allow_shared_key_access
-  
-  # Policy 2: Storage accounts should have infrastructure encryption
-  infrastructure_encryption_enabled = var.enable_infrastructure_encryption
-  
-  # Network rules to restrict access
-  network_rules {
-    default_action = "Deny"
-    bypass         = ["AzureServices"]
-  }
-  
-  tags = var.tags
-}
-
-# Create File Share
-resource "azurerm_storage_share" "main" {
-  name                 = var.file_share_name
-  storage_account_name = azurerm_storage_account.main.name
-  quota                = var.file_share_quota
-}
+# Storage Account and File Share will be created via Azure CLI post-deployment
+# This completely avoids Terraform provider issues with shared key access disabled
+# See terraform-deploy.sh for the complete Azure CLI implementation
 
 # Create App Service Plan
 resource "azurerm_service_plan" "main" {
@@ -61,6 +32,9 @@ resource "azurerm_linux_web_app" "main" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_service_plan.main.location
   service_plan_id     = azurerm_service_plan.main.id
+
+  # Policy 3: App Service apps should only be accessible over HTTPS
+  https_only = var.https_only
 
   # Enable managed identity for secure access to storage
   identity {
@@ -88,14 +62,9 @@ resource "azurerm_linux_web_app" "main" {
     PYTHONUNBUFFERED = "1"
   }
 
-  # Storage configuration for persistent data using managed identity
-  storage_account {
-    name         = "persistent_data"
-    type         = "AzureFiles"
-    account_name = azurerm_storage_account.main.name
-    share_name   = azurerm_storage_share.main.name
-    mount_path   = "/data"
-  }
+  # Storage configuration will be handled post-deployment via Azure CLI
+  # This approach allows us to use Managed Identity without access keys
+  # See deployment script or README for manual configuration steps
 
   # Enable logging
   logs {
@@ -119,6 +88,9 @@ resource "azurerm_linux_web_app_slot" "staging" {
   name           = "staging"
   app_service_id = azurerm_linux_web_app.main.id
 
+  # Policy 3: App Service apps should only be accessible over HTTPS
+  https_only = var.https_only
+
   site_config {
     application_stack {
       docker_image_name   = "fastapi-app:latest"
@@ -131,16 +103,6 @@ resource "azurerm_linux_web_app_slot" "staging" {
   tags = var.tags
 }
 
-# Role assignment for Web App managed identity to access storage
-resource "azurerm_role_assignment" "storage_file_data_smb_share_contributor" {
-  scope                = azurerm_storage_account.main.id
-  role_definition_name = "Storage File Data SMB Share Contributor"
-  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
-}
-
-# Role assignment for Web App managed identity to read storage account
-resource "azurerm_role_assignment" "storage_account_contributor" {
-  scope                = azurerm_storage_account.main.id
-  role_definition_name = "Storage Account Contributor"
-  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
-}
+# Role assignments for storage access will be configured post-deployment
+# via Azure CLI when the storage account is created
+# See terraform-deploy.sh for the complete implementation
