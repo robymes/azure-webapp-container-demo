@@ -8,7 +8,7 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 - **Containerization**: Docker with Docker Compose
 - **Hosting**: Azure Web App Service for Containers (Linux)
 - **Storage**: Azure Storage File Share for persistence
-- **Automation**: Azure CLI scripts for infrastructure and deployment
+- **Automation**: Terraform for infrastructure as code and Azure CLI scripts
 
 ## 📁 Project Structure
 
@@ -17,9 +17,12 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 │   ├── main.py              # FastAPI application
 │   └── requirements.txt     # Python dependencies
 ├── azure-scripts/
-│   ├── setup-infrastructure.sh  # Azure infrastructure setup
-│   ├── deploy.sh               # Application deployment
-│   └── cleanup.sh              # Resource cleanup
+│   ├── provider.tf             # Terraform provider configuration
+│   ├── variables.tf            # Terraform variables definition
+│   ├── main.tf                 # Main infrastructure configuration
+│   ├── outputs.tf              # Terraform outputs
+│   ├── terraform-deploy.sh     # Terraform deployment script
+│   └── terraform-cleanup.sh    # Resource cleanup script
 ├── docker-compose.yml       # Container orchestration
 ├── Dockerfile              # Container definition
 └── README.md               # This file
@@ -43,7 +46,16 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 
 ## 📋 Prerequisites
 
-1. **Azure CLI** installed and configured
+1. **Terraform** (>= 1.0) installed
+   ```bash
+   # Install Terraform
+   sudo snap install terraform
+   
+   # Or using other methods: https://www.terraform.io/downloads.html
+   terraform --version
+   ```
+
+2. **Azure CLI** installed and configured
    ```bash
    # Install Azure CLI (if not already installed)
    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
@@ -52,7 +64,7 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
    az login
    ```
 
-2. **Docker** (for local testing)
+3. **Docker** (for local testing)
    ```bash
    # Verify Docker is installed
    docker --version
@@ -70,17 +82,19 @@ cd azure-webapp-container-demo
 chmod +x azure-scripts/*.sh
 ```
 
-### Step 2: Deploy Infrastructure
+### Step 2: Deploy Infrastructure with Terraform
 ```bash
-./azure-scripts/setup-infrastructure.sh
+cd azure-scripts
+./terraform-deploy.sh
 ```
 
 This script will:
+- Initialize Terraform and validate configuration
 - Create a resource group
 - Set up Azure Storage with File Share
 - Create App Service Plan and Web App
 - Configure persistent storage mounting
-- Deploy the Docker Compose configuration
+- Provide deployment information and next steps
 
 ### Step 3: Test the Application
 The setup script will provide the Web App URL. Test the endpoints:
@@ -103,10 +117,27 @@ curl https://your-webapp-url.azurewebsites.net/read-file/test.txt
 
 ## 🔄 Redeployment
 
-To update the application after making changes:
+### Infrastructure Updates
+To update infrastructure with Terraform:
 
 ```bash
-./azure-scripts/deploy.sh
+cd azure-scripts
+./terraform-deploy.sh
+```
+
+### Docker Compose Updates
+After infrastructure is deployed, configure Docker Compose manually:
+
+```bash
+# Get web app name and resource group from Terraform outputs
+terraform output
+
+# Configure Docker Compose
+az webapp config container set \
+  --name "<web-app-name>" \
+  --resource-group "rg-fastapi-webapp" \
+  --multicontainer-config-type compose \
+  --multicontainer-config-file docker-compose.yml
 ```
 
 ## 🧪 Local Testing
@@ -146,6 +177,14 @@ az monitor app-insights component create \
 
 ## 🔧 Configuration
 
+### Terraform Variables
+You can customize the deployment by modifying variables in `variables.tf`:
+- `resource_group_name`: Name of the resource group (default: "rg-fastapi-webapp")
+- `location`: Azure region (default: "West Europe")
+- `app_service_plan_sku`: SKU for App Service Plan (default: "B1")
+- `web_app_name_prefix`: Prefix for Web App name
+- `storage_account_name_prefix`: Prefix for Storage Account name
+
 ### Environment Variables
 The application supports these environment variables:
 - `PYTHONPATH=/app`
@@ -166,6 +205,48 @@ az appservice plan update \
   --sku P1V2
 ```
 
+## 🏗️ Terraform Infrastructure Details
+
+### Resources Created
+- **Resource Group**: Contains all Azure resources
+- **Storage Account**: With randomly generated suffix for uniqueness
+- **Azure File Share**: For persistent data storage
+- **App Service Plan**: Linux-based plan with configurable SKU
+- **Linux Web App**: Container-ready with Docker support
+- **Storage Mount**: Automatically configured for `/data` path
+
+### Terraform State Management
+- State is stored locally by default
+- For production environments, consider using Azure Storage backend:
+  ```hcl
+  terraform {
+    backend "azurerm" {
+      resource_group_name  = "terraform-state-rg"
+      storage_account_name = "terraformstatestore"
+      container_name       = "tfstate"
+      key                 = "fastapi-webapp.terraform.tfstate"
+    }
+  }
+  ```
+
+### Terraform Commands
+```bash
+# Initialize Terraform
+terraform init
+
+# Plan changes
+terraform plan
+
+# Apply changes
+terraform apply
+
+# View outputs
+terraform output
+
+# Destroy resources
+terraform destroy
+```
+
 ## 🔒 Security Considerations
 
 1. **Storage Access**: Uses Azure Storage Account keys (consider using Managed Identity)
@@ -182,13 +263,14 @@ Approximate monthly costs (West Europe):
 
 ## 🧹 Cleanup
 
-To remove all resources:
+To remove all resources created by Terraform:
 
 ```bash
-./azure-scripts/cleanup.sh
+cd azure-scripts
+./terraform-cleanup.sh
 ```
 
-**Warning**: This will delete all data permanently!
+**Warning**: This will delete all data permanently! The script requires typing "destroy" to confirm.
 
 ## 🐛 Troubleshooting
 
@@ -230,7 +312,7 @@ For automated deployments, integrate with GitHub Actions:
 
 ```yaml
 # .github/workflows/deploy.yml
-name: Deploy to Azure
+name: Deploy to Azure with Terraform
 on:
   push:
     branches: [main]
@@ -239,12 +321,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: "1.0"
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Deploy
-        run: ./azure-scripts/deploy.sh
+      - name: Deploy Infrastructure
+        run: |
+          cd azure-scripts
+          ./terraform-deploy.sh
 ```
 
 ## 🤝 Contributing
