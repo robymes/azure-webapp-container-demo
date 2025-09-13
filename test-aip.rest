@@ -6,3 +6,8 @@ POST http://localhost:8000/init-dwh HTTP/1.1
 ###
 
 GET http://localhost:8000/query HTTP/1.1
+
+
+###
+
+GET https://jkl-odp-fastapi-webapp-744035.azurewebsites.net/health HTTP/1.1

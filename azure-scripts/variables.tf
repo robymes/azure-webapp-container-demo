@@ -28,6 +28,24 @@ variable "web_app_name_prefix" {
   default     = "jkl-odp-fastapi-webapp"
 }
 
+variable "container_registry_name_prefix" {
+  description = "Prefix for the Azure Container Registry name (random suffix will be appended)"
+  type        = string
+  default     = "jklodpacr"
+}
+
+variable "container_registry_sku" {
+  description = "SKU for the Azure Container Registry"
+  type        = string
+  default     = "Basic"
+}
+
+variable "container_registry_admin_enabled" {
+  description = "Enable admin user for the container registry"
+  type        = bool
+  default     = true
+}
+
 variable "storage_account_name_prefix" {
   description = "Prefix for the Storage Account name (random suffix will be appended)"
   type        = string

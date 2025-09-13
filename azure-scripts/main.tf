@@ -15,6 +15,24 @@ resource "azurerm_resource_group" "main" {
 # This completely avoids Terraform provider issues with shared key access disabled
 # See terraform-deploy.sh for the complete Azure CLI implementation
 
+# Create Azure Container Registry
+resource "azurerm_container_registry" "main" {
+  name                = "${var.container_registry_name_prefix}${random_integer.suffix.result}"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  sku                 = var.container_registry_sku
+  
+  # Enable admin user for basic authentication
+  admin_enabled = var.container_registry_admin_enabled
+  
+  # Enable managed identity access
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = var.tags
+}
+
 # Create App Service Plan
 resource "azurerm_service_plan" "main" {
   name                = var.app_service_plan_name
@@ -43,12 +61,12 @@ resource "azurerm_linux_web_app" "main" {
 
   site_config {
     application_stack {
-      docker_image_name   = "fastapi-app:latest"
-      docker_registry_url = "https://index.docker.io"
+      docker_image_name   = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+      docker_registry_url = "https://${azurerm_container_registry.main.login_server}"
     }
     
-    # Enable container logging
-    container_registry_use_managed_identity = false
+    # Enable container logging and use ACR with managed identity
+    container_registry_use_managed_identity = true
   }
 
   # App Settings
@@ -93,14 +111,23 @@ resource "azurerm_linux_web_app_slot" "staging" {
 
   site_config {
     application_stack {
-      docker_image_name   = "fastapi-app:latest"
-      docker_registry_url = "https://index.docker.io"
+      docker_image_name   = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+      docker_registry_url = "https://${azurerm_container_registry.main.login_server}"
     }
+    
+    container_registry_use_managed_identity = true
   }
 
   app_settings = azurerm_linux_web_app.main.app_settings
 
   tags = var.tags
+}
+
+# Role assignment to allow Web App to pull images from ACR
+resource "azurerm_role_assignment" "acr_pull" {
+  scope                = azurerm_container_registry.main.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
 }
 
 # Role assignments for storage access will be configured post-deployment

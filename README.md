@@ -5,9 +5,10 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 ## 🏗️ Architecture Overview
 
 - **Application**: FastAPI REST API with file operations
-- **Containerization**: Docker with Docker Compose
+- **Containerization**: Docker with Azure Container Registry (ACR)
 - **Hosting**: Azure Web App Service for Containers (Linux)
 - **Storage**: Azure Storage File Share for persistence
+- **Container Registry**: Azure Container Registry for private Docker images
 - **Automation**: Terraform for infrastructure as code and Azure CLI scripts
 
 ## 📁 Project Structure
@@ -19,12 +20,15 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 │   ├── config.toml          # Configuration file for database and analytics
 │   └── requirements.txt     # Python dependencies
 ├── azure-scripts/
-│   ├── provider.tf             # Terraform provider configuration
-│   ├── variables.tf            # Terraform variables definition
-│   ├── main.tf                 # Main infrastructure configuration
-│   ├── outputs.tf              # Terraform outputs
-│   ├── terraform-deploy.sh     # Terraform deployment script
-│   └── terraform-cleanup.sh    # Resource cleanup script
+│   ├── provider.tf                    # Terraform provider configuration
+│   ├── variables.tf                   # Terraform variables definition
+│   ├── main.tf                        # Main infrastructure configuration
+│   ├── outputs.tf                     # Terraform outputs
+│   ├── terraform-deploy.sh            # Terraform deployment script
+│   ├── terraform-cleanup.sh           # Resource cleanup script
+│   ├── docker-build-push.sh           # Docker build and push to ACR script
+│   ├── full-deploy.sh                 # Complete end-to-end deployment script
+│   └── CONTAINER-REGISTRY-GUIDE.md    # Detailed Container Registry guide
 ├── docker-compose.yml       # Container orchestration
 ├── Dockerfile              # Container definition
 ├── test-api.sh             # Comprehensive API testing script
@@ -52,10 +56,12 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 
 ### Infrastructure
 - Resource Group with all components
+- Azure Container Registry (ACR) for private Docker images
 - Azure Storage Account with File Share
 - App Service Plan (Linux, B1 SKU)
-- Web App for Containers with Docker Compose support
+- Web App for Containers with ACR integration
 - Persistent volume mounting with Azure Files
+- Managed Identity for secure ACR access
 
 ## 📋 Prerequisites
 
@@ -88,14 +94,33 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 
 ## 🔧 Quick Start
 
-### Step 1: Clone and Setup
+### Option 1: Automated Deployment (Recommended)
+```bash
+git clone <repository-url>
+cd azure-webapp-container-demo
+chmod +x azure-scripts/*.sh
+
+# Complete deployment with Container Registry
+cd azure-scripts
+./full-deploy.sh latest
+```
+
+This will automatically:
+- Deploy Azure infrastructure (ACR, App Service, Storage)
+- Build and push Docker image to Azure Container Registry
+- Configure Web App to use the private registry
+- Restart the application with the new image
+
+### Option 2: Manual Step-by-Step Deployment
+
+#### Step 1: Clone and Setup
 ```bash
 git clone <repository-url>
 cd azure-webapp-container-demo
 chmod +x azure-scripts/*.sh
 ```
 
-### Step 2: Deploy Infrastructure with Terraform
+#### Step 2: Deploy Infrastructure with Terraform
 ```bash
 cd azure-scripts
 ./terraform-deploy.sh
@@ -104,12 +129,64 @@ cd azure-scripts
 This script will:
 - Initialize Terraform and validate configuration
 - Create a resource group
+- Set up Azure Container Registry (ACR)
 - Set up Azure Storage with File Share
 - Create App Service Plan and Web App
+- Configure ACR integration with Managed Identity
 - Configure persistent storage mounting
 - Provide deployment information and next steps
 
-### Step 3: Test the Application
+#### Step 3: Build and Push Docker Image
+```bash
+# Build and push to Azure Container Registry
+./docker-build-push.sh latest
+
+# Or with custom tag
+./docker-build-push.sh v1.0.0
+```
+
+## 🐳 Azure Container Registry (ACR) Integration
+
+### Overview
+The application now uses Azure Container Registry for secure, private Docker image storage instead of public registries like Docker Hub.
+
+### Benefits
+- **Security**: Private registry accessible only by authorized Azure resources
+- **Performance**: Images are stored in the same Azure region for faster pulls
+- **Integration**: Seamless integration with Azure App Service using Managed Identity
+- **Cost-effective**: No data transfer costs between ACR and App Service
+
+### Container Registry Features
+- **Private Registry**: All images stored securely in your Azure subscription
+- **Managed Identity Authentication**: No stored credentials or access keys
+- **Role-based Access Control**: Minimal permissions with AcrPull role
+- **Automated Build & Push**: Scripts for easy image management
+
+### Quick Commands
+```bash
+# Build and push new image version
+cd azure-scripts
+./docker-build-push.sh v1.2.0
+
+# Complete deployment with new image
+./full-deploy.sh v1.2.0
+
+# List images in registry
+az acr repository show-tags --name $(terraform output -raw container_registry_name) --repository fastapi-app
+
+# View registry details
+terraform output container_registry_login_server
+```
+
+### Image Tagging Strategy
+- `latest` - Most recent version (default)
+- `v1.0.0` - Semantic versioning for releases
+- `feature-xyz` - Development branches
+- `commit-abc123` - Specific commit builds
+
+For detailed information, see [`CONTAINER-REGISTRY-GUIDE.md`](azure-scripts/CONTAINER-REGISTRY-GUIDE.md).
+
+### Step 4: Test the Application
 The setup script will provide the Web App URL. Test the endpoints:
 
 ```bash
@@ -150,27 +227,31 @@ Use the provided test script for comprehensive API testing:
 
 ## 🔄 Redeployment
 
-### Infrastructure Updates
-To update infrastructure with Terraform:
+### Complete Redeployment (Infrastructure + Application)
+For full updates including infrastructure changes:
+
+```bash
+cd azure-scripts
+./full-deploy.sh [tag]
+```
+
+### Application Updates Only
+To update just the application after code changes:
+
+```bash
+# Build and push new image
+./docker-build-push.sh v1.1.0
+
+# Restart web app to pull new image
+az webapp restart --name $(terraform output -raw web_app_name) --resource-group $(terraform output -raw resource_group_name)
+```
+
+### Infrastructure Updates Only
+To update infrastructure without rebuilding the image:
 
 ```bash
 cd azure-scripts
 ./terraform-deploy.sh
-```
-
-### Docker Compose Updates
-After infrastructure is deployed, configure Docker Compose manually:
-
-```bash
-# Get web app name and resource group from Terraform outputs
-terraform output
-
-# Configure Docker Compose
-az webapp config container set \
-  --name "<web-app-name>" \
-  --resource-group "rg-fastapi-webapp" \
-  --multicontainer-config-type compose \
-  --multicontainer-config-file docker-compose.yml
 ```
 
 ## 🧪 Local Testing
@@ -299,17 +380,22 @@ az appservice plan update \
 
 ### Resources Created
 - **Resource Group**: Contains all Azure resources
+- **Azure Container Registry (ACR)**: Private registry for Docker images
+  - SKU: Basic (configurable)
+  - Admin user enabled for authentication
+  - System-assigned Managed Identity
 - **Storage Account**: With randomly generated suffix for uniqueness and security policies applied
   - Infrastructure encryption enabled (double encryption)
   - Shared key access disabled (uses Managed Identity)
   - Network access restricted (Deny by default, allow Azure services)
 - **Azure File Share**: For persistent data storage
 - **App Service Plan**: Linux-based plan with configurable SKU
-- **Linux Web App**: Container-ready with Docker support and System-Assigned Managed Identity
+- **Linux Web App**: Container-ready with ACR integration and System-Assigned Managed Identity
 - **Storage Mount**: Automatically configured for `/data` path using Managed Identity
 - **RBAC Role Assignments**:
   - `Storage File Data SMB Share Contributor` - for file share access
   - `Storage Account Contributor` - for storage account operations
+  - `AcrPull` - for Web App to pull images from Container Registry
 
 ### Terraform State Management
 - State is stored locally by default
@@ -430,8 +516,11 @@ variable "allow_shared_key_access" {
 
 Approximate monthly costs (West Europe):
 - **App Service Plan B1**: ~€12.41/month
+- **Azure Container Registry (Basic)**: ~€4.50/month + storage
 - **Storage Account (LRS)**: ~€0.05/GB/month
-- **Data Transfer**: Minimal for API usage
+- **Data Transfer**: Minimal for API usage (no charges between ACR and App Service in same region)
+
+**Total estimated cost**: ~€17/month for basic setup
 
 ## 🧹 Cleanup
 
@@ -454,7 +543,19 @@ cd azure-scripts
    az webapp log tail --name <web-app-name> --resource-group rg-fastapi-webapp
    ```
 
-2. **Storage not accessible**
+2. **Image pull from ACR fails**
+   ```bash
+   # Verify ACR access permissions
+   az acr check-health --name $(terraform output -raw container_registry_name)
+   
+   # Check role assignments
+   az role assignment list --assignee $(terraform output -raw web_app_principal_id)
+   
+   # Manually restart to trigger image pull
+   az webapp restart --name <web-app-name> --resource-group rg-fastapi-webapp
+   ```
+
+3. **Storage not accessible**
    ```bash
    # Verify storage mount
    az webapp config storage-account list \
@@ -462,11 +563,29 @@ cd azure-scripts
      --resource-group rg-fastapi-webapp
    ```
 
-3. **Application not responding**
+4. **Application not responding**
    ```bash
    # Restart the web app
    az webapp restart --name <web-app-name> --resource-group rg-fastapi-webapp
    ```
+
+5. **Docker build fails locally**
+   ```bash
+   # Test build locally first
+   docker build -t test-image .
+   docker run -p 8000:8000 test-image
+   
+   # Check build logs
+   ./docker-build-push.sh 2>&1 | tee build.log
+   ```
+
+### Container Registry Troubleshooting
+- **Access Denied**: Ensure Managed Identity has AcrPull role
+- **Image Not Found**: Verify image was pushed successfully with `az acr repository list`
+- **Authentication Issues**: Check ACR admin user is enabled if using basic auth
+- **Network Issues**: Verify ACR and App Service are in same region
+
+For detailed troubleshooting, see [`CONTAINER-REGISTRY-GUIDE.md`](azure-scripts/CONTAINER-REGISTRY-GUIDE.md).
 
 ### Health Check Endpoints
 - **Basic**: `GET /` - Returns simple status
