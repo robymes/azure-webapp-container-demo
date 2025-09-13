@@ -210,3 +210,4 @@ __marimo__/
 .terraform*
 outputs.json
 *.tfplan
+*.tfstate
