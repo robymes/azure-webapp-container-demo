@@ -341,14 +341,12 @@ main() {
     terraform_plan
     terraform_apply
     show_outputs
-    configure_storage_mount
-    configure_docker_compose
-    apply_security_hardening
+    verify_container_app_deployment
     
     log_info "Deployment script completed!"
     echo
-    log_warn "Note: You may need to configure Docker Compose manually and restart the web app."
-    log_info "Security hardening applied: Storage keys disabled, HTTPS enforced, Managed Identity configured!"
+    log_info "Container App deployment completed successfully!"
+    log_info "Your FastAPI application is now running on Azure Container Apps with persistent storage."
 }
 
 # Show usage
@@ -357,10 +355,10 @@ if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
     echo
     echo "This script deploys Azure infrastructure using Terraform including:"
     echo "  - Resource Group"
+    echo "  - Azure Container Registry (ACR)"
     echo "  - Storage Account with File Share"
-    echo "  - App Service Plan (Linux, B1 SKU)"
-    echo "  - Web App for Containers"
-    echo "  - Storage mount configuration"
+    echo "  - Container App Environment"
+    echo "  - Container App with persistent storage"
     echo
     echo "Prerequisites:"
     echo "  - Terraform installed (>= 1.0)"

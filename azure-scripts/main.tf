@@ -33,103 +33,135 @@ resource "azurerm_container_registry" "main" {
   tags = var.tags
 }
 
-# Create App Service Plan
-resource "azurerm_service_plan" "main" {
-  name                = var.app_service_plan_name
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  os_type             = "Linux"
-  sku_name            = var.app_service_plan_sku
-  
+# Storage Account for persistent data
+resource "azurerm_storage_account" "main" {
+  name                            = "${var.storage_account_name_prefix}${random_integer.suffix.result}"
+  resource_group_name             = azurerm_resource_group.main.name
+  location                        = azurerm_resource_group.main.location
+  account_tier                    = var.storage_account_tier
+  account_replication_type        = var.storage_account_replication_type
+  infrastructure_encryption_enabled = var.enable_infrastructure_encryption
+  shared_access_key_enabled       = var.allow_shared_key_access  # Security policy compliance
+  public_network_access_enabled   = var.allow_public_network_access
+
+  # Network rules to restrict access
+  network_rules {
+    default_action = var.enable_network_restriction ? "Deny" : "Allow"
+    bypass         = ["AzureServices"]
+  }
+
   tags = var.tags
 }
 
-# Create Web App
-resource "azurerm_linux_web_app" "main" {
-  name                = "${var.web_app_name_prefix}-${random_integer.suffix.result}"
+# Azure File Share for persistent storage (conditional on shared key access)
+resource "azurerm_storage_share" "main" {
+  count = var.allow_shared_key_access ? 1 : 0
+  
+  name                 = var.file_share_name
+  storage_account_name = azurerm_storage_account.main.name
+  quota                = var.file_share_quota
+}
+
+# Create Container App Environment
+resource "azurerm_container_app_environment" "main" {
+  name                = var.container_app_environment_name
   resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_service_plan.main.location
-  service_plan_id     = azurerm_service_plan.main.id
+  location            = azurerm_resource_group.main.location
 
-  # Policy 3: App Service apps should only be accessible over HTTPS
-  https_only = var.https_only
+  tags = var.tags
+}
 
-  # Enable managed identity for secure access to storage
+# Container App Environment Storage for Azure Files (conditional on shared key access)
+resource "azurerm_container_app_environment_storage" "data" {
+  count = var.allow_shared_key_access ? 1 : 0
+  
+  name                         = "data-storage"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  account_name                 = azurerm_storage_account.main.name
+  share_name                   = azurerm_storage_share.main[0].name
+  access_key                   = azurerm_storage_account.main.primary_access_key
+  access_mode                  = "ReadWrite"
+}
+
+# Create Container App
+resource "azurerm_container_app" "main" {
+  name                         = "${var.container_app_name_prefix}-${random_integer.suffix.result}"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  # Enable managed identity for secure access to ACR
   identity {
     type = "SystemAssigned"
   }
 
-  site_config {
-    application_stack {
-      docker_image_name   = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
-      docker_registry_url = "https://${azurerm_container_registry.main.login_server}"
+  template {
+    min_replicas = var.container_app_min_replicas
+    max_replicas = var.container_app_max_replicas
+
+    container {
+      name   = "fastapi-app"
+      image  = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+      cpu    = var.container_app_cpu
+      memory = var.container_app_memory
+
+      env {
+        name  = "PYTHONPATH"
+        value = "/app"
+      }
+
+      env {
+        name  = "PYTHONUNBUFFERED"
+        value = "1"
+      }
+
+      # Volume mount for persistent storage (conditional on shared key access)
+      dynamic "volume_mounts" {
+        for_each = var.allow_shared_key_access ? [1] : []
+        content {
+          name = "data-volume"
+          path = "/data"
+        }
+      }
     }
-    
-    # Enable container logging and use ACR with managed identity
-    container_registry_use_managed_identity = true
-  }
 
-  # App Settings
-  app_settings = {
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE = var.enable_app_service_storage
-    WEBSITES_CONTAINER_START_TIME_LIMIT = var.container_start_time_limit
-    DOCKER_ENABLE_CI                   = var.docker_enable_ci
-    
-    # Environment variables for the application
-    PYTHONPATH      = "/app"
-    PYTHONUNBUFFERED = "1"
-  }
-
-  # Storage configuration will be handled post-deployment via Azure CLI
-  # This approach allows us to use Managed Identity without access keys
-  # See deployment script or README for manual configuration steps
-
-  # Enable logging
-  logs {
-    application_logs {
-      file_system_level = "Information"
-    }
-    
-    http_logs {
-      file_system {
-        retention_in_days = 7
-        retention_in_mb   = 100
+    # Azure Files volume (conditional on shared key access)
+    dynamic "volume" {
+      for_each = var.allow_shared_key_access ? [1] : []
+      content {
+        name         = "data-volume"
+        storage_type = "AzureFile"
+        storage_name = "data-storage"
       }
     }
   }
 
-  tags = var.tags
-}
+  ingress {
+    allow_insecure_connections = false  # Force HTTPS only
+    external_enabled          = true
+    target_port               = 8000
+    transport                 = "http"
 
-# Configure the web app with Docker Compose (requires Azure CLI or additional configuration)
-resource "azurerm_linux_web_app_slot" "staging" {
-  name           = "staging"
-  app_service_id = azurerm_linux_web_app.main.id
-
-  # Policy 3: App Service apps should only be accessible over HTTPS
-  https_only = var.https_only
-
-  site_config {
-    application_stack {
-      docker_image_name   = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
-      docker_registry_url = "https://${azurerm_container_registry.main.login_server}"
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
     }
-    
-    container_registry_use_managed_identity = true
   }
 
-  app_settings = azurerm_linux_web_app.main.app_settings
+  registry {
+    server   = azurerm_container_registry.main.login_server
+    identity = "system"
+  }
+
+  # Remove depends_on since storage is now conditional
+  # depends_on will be handled implicitly through resource references
 
   tags = var.tags
 }
 
-# Role assignment to allow Web App to pull images from ACR
+# Role assignment to allow Container App to pull images from ACR
 resource "azurerm_role_assignment" "acr_pull" {
   scope                = azurerm_container_registry.main.id
   role_definition_name = "AcrPull"
-  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
+  principal_id         = azurerm_container_app.main.identity[0].principal_id
 }
-
-# Role assignments for storage access will be configured post-deployment
-# via Azure CLI when the storage account is created
-# See terraform-deploy.sh for the complete implementation

@@ -48,7 +48,7 @@ show_help() {
     echo "This script will:"
     echo "  1. Deploy/update Azure infrastructure with Terraform"
     echo "  2. Build and push Docker image to Azure Container Registry"
-    echo "  3. Restart the web app to pull the new image"
+    echo "  3. Update the Container App to use the new image"
     echo
     echo "Prerequisites:"
     echo "  - Azure CLI installed and logged in"
@@ -93,44 +93,49 @@ main() {
     print_success "Docker image build and push completed!"
     echo
     
-    # Step 3: Get web app name and restart it
-    print_status "Step 3: Restarting web app to pull new image..."
+    # Step 3: Update Container App with new image
+    print_status "Step 3: Updating Container App with new image..."
     
-    # Get web app details from Terraform outputs
+    # Get container app details from Terraform outputs
     RESOURCE_GROUP=$(terraform output -raw resource_group_name 2>/dev/null || echo "")
-    WEB_APP_NAME=$(terraform output -raw web_app_name 2>/dev/null || echo "")
+    CONTAINER_APP_NAME=$(terraform output -raw container_app_name 2>/dev/null || echo "")
+    ACR_LOGIN_SERVER=$(terraform output -raw container_registry_login_server 2>/dev/null || echo "")
     
-    if [ -n "$RESOURCE_GROUP" ] && [ -n "$WEB_APP_NAME" ]; then
-        print_status "Restarting web app: $WEB_APP_NAME in resource group: $RESOURCE_GROUP"
+    if [ -n "$RESOURCE_GROUP" ] && [ -n "$CONTAINER_APP_NAME" ] && [ -n "$ACR_LOGIN_SERVER" ]; then
+        print_status "Updating Container App: $CONTAINER_APP_NAME in resource group: $RESOURCE_GROUP"
         
-        if az webapp restart --name "$WEB_APP_NAME" --resource-group "$RESOURCE_GROUP"; then
-            print_success "Web app restarted successfully!"
+        # Update container app with new image
+        if az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_LOGIN_SERVER/fastapi-app:$DOCKER_TAG"; then
+            print_success "Container App updated successfully!"
         else
-            print_warning "Failed to restart web app, but deployment may still work"
+            print_warning "Failed to update Container App, but deployment may still work"
         fi
         
         # Wait a bit and show the URL
-        sleep 10
-        WEB_APP_URL=$(terraform output -raw web_app_url 2>/dev/null || echo "")
-        if [ -n "$WEB_APP_URL" ]; then
+        sleep 15
+        CONTAINER_APP_URL=$(terraform output -raw container_app_url 2>/dev/null || echo "")
+        if [ -n "$CONTAINER_APP_URL" ]; then
             print_success "=== Deployment Complete! ==="
-            print_status "Web App URL: $WEB_APP_URL"
-            print_status "Health Check: $WEB_APP_URL/health"
+            print_status "Container App URL: $CONTAINER_APP_URL"
+            print_status "Health Check: $CONTAINER_APP_URL/health"
             echo
             print_status "Testing health endpoint..."
-            sleep 5
-            if curl -f "$WEB_APP_URL/health" 2>/dev/null; then
+            sleep 10
+            if curl -f "$CONTAINER_APP_URL/health" --max-time 30 2>/dev/null; then
                 echo
                 print_success "Health check passed! Your application is running."
             else
                 echo
                 print_warning "Health check failed. The app might still be starting up."
-                print_status "Please wait a few minutes and try accessing: $WEB_APP_URL"
+                print_status "Please wait a few minutes and try accessing: $CONTAINER_APP_URL"
             fi
         fi
     else
-        print_warning "Could not get web app details from Terraform outputs"
-        print_status "Please restart the web app manually from the Azure portal"
+        print_warning "Could not get Container App details from Terraform outputs"
+        print_status "Please check the Container App status manually in the Azure portal"
     fi
 }
 

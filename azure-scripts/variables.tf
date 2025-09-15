@@ -10,22 +10,40 @@ variable "location" {
   default     = "West Europe"
 }
 
-variable "app_service_plan_name" {
-  description = "Name of the App Service Plan"
+variable "container_app_environment_name" {
+  description = "Name of the Container App Environment"
   type        = string
-  default     = "jkl-odp-fastapi-plan"
+  default     = "jkl-odp-container-env"
 }
 
-variable "app_service_plan_sku" {
-  description = "SKU for the App Service Plan"
+variable "container_app_name_prefix" {
+  description = "Prefix for the Container App name (random suffix will be appended)"
   type        = string
-  default     = "S1"
+  default     = "jkl-odp-fastapi-app"
 }
 
-variable "web_app_name_prefix" {
-  description = "Prefix for the Web App name (timestamp will be appended)"
+variable "container_app_cpu" {
+  description = "CPU allocation for the container app"
+  type        = number
+  default     = 0.5
+}
+
+variable "container_app_memory" {
+  description = "Memory allocation for the container app"
   type        = string
-  default     = "jkl-odp-fastapi-webapp"
+  default     = "1Gi"
+}
+
+variable "container_app_min_replicas" {
+  description = "Minimum number of replicas for the container app"
+  type        = number
+  default     = 1
+}
+
+variable "container_app_max_replicas" {
+  description = "Maximum number of replicas for the container app"
+  type        = number
+  default     = 5
 }
 
 variable "container_registry_name_prefix" {
@@ -76,23 +94,6 @@ variable "storage_account_replication_type" {
   default     = "LRS"
 }
 
-variable "container_start_time_limit" {
-  description = "Container start time limit in seconds"
-  type        = number
-  default     = 600
-}
-
-variable "enable_app_service_storage" {
-  description = "Enable App Service storage"
-  type        = bool
-  default     = true
-}
-
-variable "docker_enable_ci" {
-  description = "Enable Docker CI"
-  type        = bool
-  default     = true
-}
 
 variable "tags" {
   description = "A map of tags to assign to resources"
@@ -111,25 +112,19 @@ variable "enable_infrastructure_encryption" {
 }
 
 variable "allow_shared_key_access" {
-  description = "Allow shared key access to storage account. Always false for security compliance."
+  description = "Allow shared key access to storage account. Set to false for security policy compliance."
   type        = bool
   default     = false
 }
 
-variable "https_only" {
-  description = "Force HTTPS only access for App Service"
-  type        = bool
-  default     = true
-}
-
 variable "allow_public_network_access" {
-  description = "Allow public network access to storage account. Always false for security compliance."
+  description = "Allow public network access to storage account. Set to false for security compliance."
   type        = bool
   default     = false
 }
 
 variable "enable_network_restriction" {
-  description = "Enable network access restrictions with Azure Services bypass"
+  description = "Enable network access restrictions with Azure Services bypass for security compliance"
   type        = bool
   default     = true
 }

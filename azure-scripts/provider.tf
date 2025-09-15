@@ -13,7 +13,11 @@ terraform {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
   
   # Use Azure AD authentication for storage operations
   # This allows Terraform to work with storage accounts that have shared key access disabled

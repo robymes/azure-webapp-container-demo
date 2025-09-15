@@ -1,12 +1,12 @@
-# FastAPI Azure Web App with Docker Compose and Persistent Storage
+# FastAPI Azure Container Apps with Persistent Storage
 
-A complete solution for deploying a FastAPI application to Azure Web App Service for Containers using Docker Compose with persistent Azure Storage integration.
+A complete solution for deploying a FastAPI application to Azure Container Apps using Docker with persistent Azure Storage integration.
 
 ## 🏗️ Architecture Overview
 
 - **Application**: FastAPI REST API with file operations
 - **Containerization**: Docker with Azure Container Registry (ACR)
-- **Hosting**: Azure Web App Service for Containers (Linux)
+- **Hosting**: Azure Container Apps (serverless containers)
 - **Storage**: Azure Storage File Share for persistence
 - **Container Registry**: Azure Container Registry for private Docker images
 - **Automation**: Terraform for infrastructure as code and Azure CLI scripts
@@ -58,8 +58,8 @@ A complete solution for deploying a FastAPI application to Azure Web App Service
 - Resource Group with all components
 - Azure Container Registry (ACR) for private Docker images
 - Azure Storage Account with File Share
-- App Service Plan (Linux, B1 SKU)
-- Web App for Containers with ACR integration
+- Container App Environment
+- Container App with auto-scaling capabilities
 - Persistent volume mounting with Azure Files
 - Managed Identity for secure ACR access
 
@@ -106,10 +106,10 @@ cd azure-scripts
 ```
 
 This will automatically:
-- Deploy Azure infrastructure (ACR, App Service, Storage)
+- Deploy Azure infrastructure (ACR, Container Apps, Storage)
 - Build and push Docker image to Azure Container Registry
-- Configure Web App to use the private registry
-- Restart the application with the new image
+- Configure Container App to use the private registry
+- Update the application with the new image
 
 ### Option 2: Manual Step-by-Step Deployment
 
@@ -131,7 +131,7 @@ This script will:
 - Create a resource group
 - Set up Azure Container Registry (ACR)
 - Set up Azure Storage with File Share
-- Create App Service Plan and Web App
+- Create Container App Environment and Container App
 - Configure ACR integration with Managed Identity
 - Configure persistent storage mounting
 - Provide deployment information and next steps
@@ -187,28 +187,28 @@ terraform output container_registry_login_server
 For detailed information, see [`CONTAINER-REGISTRY-GUIDE.md`](azure-scripts/CONTAINER-REGISTRY-GUIDE.md).
 
 ### Step 4: Test the Application
-The setup script will provide the Web App URL. Test the endpoints:
+The setup script will provide the Container App URL. Test the endpoints:
 
 ```bash
 # Health check
-curl https://your-webapp-url.azurewebsites.net/health
+curl https://your-container-app.azurecontainerapps.io/health
 
 # Write a file
-curl -X POST "https://your-webapp-url.azurewebsites.net/write-file" \
+curl -X POST "https://your-container-app.azurecontainerapps.io/write-file" \
   -H "Content-Type: application/json" \
-  -d '{"content":"Hello World from Azure!","filename":"test.txt"}'
+  -d '{"content":"Hello World from Azure Container Apps!","filename":"test.txt"}'
 
 # List files
-curl https://your-webapp-url.azurewebsites.net/list-files
+curl https://your-container-app.azurecontainerapps.io/list-files
 
 # Read file
-curl https://your-webapp-url.azurewebsites.net/read-file/test.txt
+curl https://your-container-app.azurecontainerapps.io/read-file/test.txt
 
 # Initialize data warehouse
-curl -X POST https://your-webapp-url.azurewebsites.net/init-dwh
+curl -X POST https://your-container-app.azurecontainerapps.io/init-dwh
 
 # Execute analytics query
-curl https://your-webapp-url.azurewebsites.net/query
+curl https://your-container-app.azurecontainerapps.io/query
 ```
 
 ### Automated Testing
@@ -219,7 +219,7 @@ Use the provided test script for comprehensive API testing:
 ./test-api.sh
 
 # Test deployed application
-./test-api.sh https://your-webapp-url.azurewebsites.net
+./test-api.sh https://your-container-app.azurecontainerapps.io
 
 # See all available options
 ./test-api.sh --help
@@ -242,8 +242,8 @@ To update just the application after code changes:
 # Build and push new image
 ./docker-build-push.sh v1.1.0
 
-# Restart web app to pull new image
-az webapp restart --name $(terraform output -raw web_app_name) --resource-group $(terraform output -raw resource_group_name)
+# Update Container App to use new image
+az containerapp update --name $(terraform output -raw container_app_name) --resource-group $(terraform output -raw resource_group_name) --image $(terraform output -raw container_registry_login_server)/fastapi-app:v1.1.0
 ```
 
 ### Infrastructure Updates Only
@@ -280,10 +280,10 @@ curl "http://localhost:8000/query"
 ### View Application Logs
 ```bash
 # Real-time logs
-az webapp log tail --name <web-app-name> --resource-group rg-fastapi-webapp
+az containerapp logs show --name <container-app-name> --resource-group <resource-group> --follow
 
-# Download log files
-az webapp log download --name <web-app-name> --resource-group rg-fastapi-webapp
+# Show recent logs
+az containerapp logs show --name <container-app-name> --resource-group <resource-group>
 ```
 
 ### Application Insights (Optional)
@@ -291,9 +291,9 @@ To enable detailed monitoring, add Application Insights:
 
 ```bash
 az monitor app-insights component create \
-  --app <web-app-name>-insights \
+  --app <container-app-name>-insights \
   --location "West Europe" \
-  --resource-group rg-fastapi-webapp
+  --resource-group <resource-group>
 ```
 
 ## 🗃️ Data Warehouse Configuration
@@ -340,21 +340,40 @@ top_countries_limit = 10
 You can customize the deployment by modifying variables in `variables.tf`:
 
 #### Infrastructure Variables
-- `resource_group_name`: Name of the resource group (default: "rg-fastapi-webapp")
+- `resource_group_name`: Name of the resource group (default: "jkl-open-data-platform")
 - `location`: Azure region (default: "West Europe")
-- `app_service_plan_sku`: SKU for App Service Plan (default: "B1")
-- `web_app_name_prefix`: Prefix for Web App name
+- `container_app_environment_name`: Name of Container App Environment
+- `container_app_name_prefix`: Prefix for Container App name
 - `storage_account_name_prefix`: Prefix for Storage Account name
+- `container_app_cpu`: CPU allocation (default: 0.5)
+- `container_app_memory`: Memory allocation (default: "1Gi")
+- `container_app_min_replicas`: Minimum replicas (default: 1)
+- `container_app_max_replicas`: Maximum replicas (default: 5)
 
 #### Security Variables
 - `enable_infrastructure_encryption`: Enable double encryption for storage account (default: `true`)
-- `allow_shared_key_access`: Allow shared key access to storage account (default: `false`)
-- `https_only`: Force HTTPS only access for App Service (default: `true`)
+- `allow_shared_key_access`: Allow shared key access to storage account (default: `false` - for security policy compliance)
+- `allow_public_network_access`: Allow public network access to storage account (default: `false` - for security compliance)
+- `enable_network_restriction`: Enable network access restrictions (default: `true` - for security compliance)
 
-**Security Recommendation**: Keep the default security values for production environments:
-- `enable_infrastructure_encryption = true` (storage double encryption)
-- `allow_shared_key_access = false` (no shared keys)
-- `https_only = true` (HTTPS enforced)
+**Security Policy Compliance**:
+- **Shared Key Access**: Set to `false` by default to comply with "Storage accounts should prevent shared key access" policy
+- **Public Network Access**: Disabled by default (`allow_public_network_access = false`) to comply with security policies
+- **Network Restrictions**: Enabled by default with Azure Services bypass to ensure secure access
+- **Infrastructure Encryption**: Double encryption enabled for data at rest
+
+**Important Note on Persistent Storage**:
+When `allow_shared_key_access = false` (default for security compliance):
+- Azure Files persistent storage will NOT be available to the Container App
+- The application will run without persistent storage mounted at `/data`
+- All file operations will use ephemeral storage (lost on container restart)
+- To enable persistent storage, set `allow_shared_key_access = true` in variables
+
+**Alternative for Persistent Storage**:
+For production environments requiring both security compliance AND persistent storage, consider:
+- Using Azure Database services instead of file-based storage
+- Implementing external storage solutions with proper authentication
+- Using Azure Key Vault for sensitive data instead of file storage
 
 ### Environment Variables
 The application supports these environment variables:
@@ -367,13 +386,14 @@ The application supports these environment variables:
 - **Storage Type**: Azure Files (SMB)
 
 ### Scaling
-To scale the App Service Plan:
+Container Apps automatically scale based on demand. To configure scaling:
 
 ```bash
-az appservice plan update \
-  --name asp-fastapi-webapp \
-  --resource-group rg-fastapi-webapp \
-  --sku P1V2
+az containerapp update \
+  --name <container-app-name> \
+  --resource-group <resource-group> \
+  --min-replicas 0 \
+  --max-replicas 10
 ```
 
 ## 🏗️ Terraform Infrastructure Details
@@ -389,13 +409,12 @@ az appservice plan update \
   - Shared key access disabled (uses Managed Identity)
   - Network access restricted (Deny by default, allow Azure services)
 - **Azure File Share**: For persistent data storage
-- **App Service Plan**: Linux-based plan with configurable SKU
-- **Linux Web App**: Container-ready with ACR integration and System-Assigned Managed Identity
-- **Storage Mount**: Automatically configured for `/data` path using Managed Identity
+- **Container App Environment**: Managed environment for Container Apps
+- **Container App**: Serverless containers with auto-scaling and ACR integration
+- **Storage Mount**: Automatically configured for `/data` path using Azure Files
 - **RBAC Role Assignments**:
   - `Storage File Data SMB Share Contributor` - for file share access
-  - `Storage Account Contributor` - for storage account operations
-  - `AcrPull` - for Web App to pull images from Container Registry
+  - `AcrPull` - for Container App to pull images from Container Registry
 
 ### Terraform State Management
 - State is stored locally by default
@@ -515,12 +534,12 @@ variable "allow_shared_key_access" {
 ## 💰 Cost Estimation
 
 Approximate monthly costs (West Europe):
-- **App Service Plan B1**: ~€12.41/month
+- **Container Apps**: Pay-per-use (€0.000024/vCPU-second, €0.000003/GiB-second)
 - **Azure Container Registry (Basic)**: ~€4.50/month + storage
 - **Storage Account (LRS)**: ~€0.05/GB/month
-- **Data Transfer**: Minimal for API usage (no charges between ACR and App Service in same region)
+- **Data Transfer**: Minimal for API usage (no charges between ACR and Container Apps in same region)
 
-**Total estimated cost**: ~€17/month for basic setup
+**Total estimated cost**: ~€5-15/month depending on usage (much lower with Container Apps auto-scaling)
 
 ## 🧹 Cleanup
 
@@ -540,7 +559,7 @@ cd azure-scripts
 1. **Container fails to start**
    ```bash
    # Check container logs
-   az webapp log tail --name <web-app-name> --resource-group rg-fastapi-webapp
+   az containerapp logs show --name <container-app-name> --resource-group <resource-group>
    ```
 
 2. **Image pull from ACR fails**
@@ -549,24 +568,22 @@ cd azure-scripts
    az acr check-health --name $(terraform output -raw container_registry_name)
    
    # Check role assignments
-   az role assignment list --assignee $(terraform output -raw web_app_principal_id)
+   az role assignment list --assignee $(az containerapp identity show --name <container-app-name> --resource-group <resource-group> --query principalId -o tsv)
    
-   # Manually restart to trigger image pull
-   az webapp restart --name <web-app-name> --resource-group rg-fastapi-webapp
+   # Update Container App to trigger new deployment
+   az containerapp update --name <container-app-name> --resource-group <resource-group>
    ```
 
 3. **Storage not accessible**
    ```bash
-   # Verify storage mount
-   az webapp config storage-account list \
-     --name <web-app-name> \
-     --resource-group rg-fastapi-webapp
+   # Verify Container App Environment storage
+   az containerapp env storage list --name <container-app-environment> --resource-group <resource-group>
    ```
 
 4. **Application not responding**
    ```bash
-   # Restart the web app
-   az webapp restart --name <web-app-name> --resource-group rg-fastapi-webapp
+   # Restart the Container App
+   az containerapp revision restart --name <container-app-name> --resource-group <resource-group>
    ```
 
 5. **Docker build fails locally**
@@ -583,7 +600,7 @@ cd azure-scripts
 - **Access Denied**: Ensure Managed Identity has AcrPull role
 - **Image Not Found**: Verify image was pushed successfully with `az acr repository list`
 - **Authentication Issues**: Check ACR admin user is enabled if using basic auth
-- **Network Issues**: Verify ACR and App Service are in same region
+- **Network Issues**: Verify ACR and Container Apps are in same region
 
 For detailed troubleshooting, see [`CONTAINER-REGISTRY-GUIDE.md`](azure-scripts/CONTAINER-REGISTRY-GUIDE.md).
 
@@ -602,8 +619,8 @@ For detailed troubleshooting, see [`CONTAINER-REGISTRY-GUIDE.md`](azure-scripts/
 ## 📚 API Documentation
 
 Once deployed, access the interactive API documentation:
-- **Swagger UI**: `https://your-webapp-url.azurewebsites.net/docs`
-- **ReDoc**: `https://your-webapp-url.azurewebsites.net/redoc`
+- **Swagger UI**: `https://your-container-app.azurecontainerapps.io/docs`
+- **ReDoc**: `https://your-container-app.azurecontainerapps.io/redoc`
 
 ### Sample API Workflow
 1. **Health Check**: `GET /health` - Verify application and storage status
@@ -656,9 +673,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For issues and questions:
 1. Check the troubleshooting section above
-2. Review Azure Web App documentation
+2. Review Azure Container Apps documentation
 3. Open an issue in this repository
 
 ---
 
-**Note**: This solution uses Azure Web App Service for Containers with Docker Compose preview feature. Ensure your Azure subscription supports this feature.
+**Note**: This solution uses Azure Container Apps, which provides serverless containers with automatic scaling. Container Apps is generally available and included in most Azure subscriptions.
