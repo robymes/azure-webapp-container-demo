@@ -211,3 +211,4 @@ __marimo__/
 outputs.json
 *.tfplan
 *.tfstate
+*.tfstate.backup
