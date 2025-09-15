@@ -95,6 +95,13 @@ resource "azurerm_container_app" "main" {
     type = "SystemAssigned"
   }
 
+  # Add timeouts to handle polling issues
+  timeouts {
+    create = "15m"
+    update = "15m"
+    delete = "15m"
+  }
+
   template {
     min_replicas = var.container_app_min_replicas
     max_replicas = var.container_app_max_replicas

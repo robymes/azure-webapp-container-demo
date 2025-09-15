@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 3.80"  # Use a more specific version that's known to work better with Container Apps
     }
     random = {
       source  = "hashicorp/random"
@@ -22,4 +22,7 @@ provider "azurerm" {
   # Use Azure AD authentication for storage operations
   # This allows Terraform to work with storage accounts that have shared key access disabled
   storage_use_azuread = true
+  
+  # Skip provider registration to avoid potential polling issues
+  skip_provider_registration = true
 }
