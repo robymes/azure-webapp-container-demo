@@ -185,7 +185,7 @@ main() {
     echo
     print_success "=== Build and Push Complete! ==="
     print_status "Your image is now available at: $ACR_LOGIN_SERVER/$IMAGE_NAME:$TAG"
-    print_status "The Azure Web App should automatically use this image."
+    print_status "The AKS deployment will use this image for the FastAPI application."
 }
 
 # Help function

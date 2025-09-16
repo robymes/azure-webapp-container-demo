@@ -1,3 +1,9 @@
+variable "project_name" {
+  description = "Name of the project (used for AKS cluster naming)"
+  type        = string
+  default     = "jkl-odp"
+}
+
 variable "resource_group_name" {
   description = "Name of the resource group"
   type        = string
@@ -10,41 +16,6 @@ variable "location" {
   default     = "West Europe"
 }
 
-variable "container_app_environment_name" {
-  description = "Name of the Container App Environment"
-  type        = string
-  default     = "jkl-odp-container-env"
-}
-
-variable "container_app_name_prefix" {
-  description = "Prefix for the Container App name (random suffix will be appended)"
-  type        = string
-  default     = "jkl-odp-fastapi-app"
-}
-
-variable "container_app_cpu" {
-  description = "CPU allocation for the container app"
-  type        = number
-  default     = 0.5
-}
-
-variable "container_app_memory" {
-  description = "Memory allocation for the container app"
-  type        = string
-  default     = "1Gi"
-}
-
-variable "container_app_min_replicas" {
-  description = "Minimum number of replicas for the container app"
-  type        = number
-  default     = 1
-}
-
-variable "container_app_max_replicas" {
-  description = "Maximum number of replicas for the container app"
-  type        = number
-  default     = 5
-}
 
 variable "container_registry_name_prefix" {
   description = "Prefix for the Azure Container Registry name (random suffix will be appended)"
@@ -58,11 +29,6 @@ variable "container_registry_sku" {
   default     = "Basic"
 }
 
-variable "container_registry_admin_enabled" {
-  description = "Enable admin user for the container registry"
-  type        = bool
-  default     = true
-}
 
 variable "storage_account_name_prefix" {
   description = "Prefix for the Storage Account name (random suffix will be appended)"
@@ -127,41 +93,4 @@ variable "enable_network_restriction" {
   description = "Enable network access restrictions with Azure Services bypass for security compliance"
   type        = bool
   default     = true
-}
-
-# Private Endpoint and VNet Integration Variables
-variable "enable_vnet_integration" {
-  description = "Enable VNet integration for Container Apps Environment"
-  type        = bool
-  default     = false
-}
-
-variable "allowed_ip_ranges" {
-  description = "List of allowed IP ranges for storage access when using private endpoints"
-  type        = list(string)
-  default     = []
-}
-
-variable "vnet_address_space" {
-  description = "Address space for the virtual network"
-  type        = list(string)
-  default     = ["10.0.0.0/16"]
-}
-
-variable "private_endpoints_subnet_address_prefix" {
-  description = "Address prefix for the private endpoints subnet"
-  type        = string
-  default     = "10.0.1.0/24"
-}
-
-variable "container_apps_subnet_address_prefix" {
-  description = "Address prefix for the container apps subnet"
-  type        = string
-  default     = "10.0.2.0/23"
-}
-
-variable "enable_advanced_storage_permissions" {
-  description = "Enable advanced storage permissions for Container App Managed Identity"
-  type        = bool
-  default     = false
 }

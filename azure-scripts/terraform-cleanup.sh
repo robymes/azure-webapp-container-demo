@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Terraform Cleanup Script for FastAPI Azure Web App
+# Terraform Cleanup Script for FastAPI Azure AKS Deployment
 # This script destroys all resources created by Terraform
 
 set -e  # Exit on any error
@@ -78,8 +78,8 @@ confirm_destruction() {
     echo
     echo "Resources that will be destroyed:"
     echo "  - Resource Group and ALL contained resources"
-    echo "  - Web App"
-    echo "  - App Service Plan" 
+    echo "  - AKS Cluster and all Kubernetes resources"
+    echo "  - Azure Container Registry"
     echo "  - Storage Account and ALL data"
     echo "  - All other resources in the configuration"
     echo
@@ -143,7 +143,7 @@ main() {
 
 # Show usage
 if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
-    echo "Terraform Cleanup Script for FastAPI Azure Web App"
+    echo "Terraform Cleanup Script for FastAPI Azure AKS Deployment"
     echo
     echo "This script destroys all Azure resources created by Terraform."
     echo

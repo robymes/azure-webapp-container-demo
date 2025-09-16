@@ -1,134 +1,181 @@
-# 🚀 Deployment Summary - Persistent Storage with External Access
+# Azure Kubernetes Service (AKS) Deployment Summary
 
-## ✅ **Refactored Azure Scripts Folder**
+## Architecture Overview
 
-The azure-scripts folder has been completely refactored to provide a clean, reliable deployment solution for persistent data volume with external access while maintaining security compliance.
+This deployment creates a complete FastAPI application infrastructure on Azure Kubernetes Service (AKS) with the following components:
 
-## 📁 **Final File Structure**
+### Infrastructure Components
 
-```
-azure-scripts/
-├── README.md                    # Comprehensive usage guide
-├── DEPLOYMENT-SUMMARY.md        # This summary document
-├── CONTAINER-REGISTRY-GUIDE.md  # Container registry setup guide
-│
-├── main.tf                      # Simplified, working Terraform configuration
-├── variables.tf                 # Variable definitions
-├── outputs.tf                   # Deployment outputs (cleaned up)
-├── provider.tf                  # Azure provider configuration
-│
-├── full-deploy.sh               # Complete deployment script (recommended)
-├── terraform-deploy.sh          # Infrastructure-only deployment
-├── docker-build-push.sh         # Build and push Docker image
-├── update-container.sh          # Update container app
-├── external-storage-access.sh   # External storage access tool
-│
-├── cleanup.sh                   # Resource cleanup
-├── terraform-cleanup.sh         # Terraform cleanup
-└── fix-acr-permissions.sh       # ACR permissions fix
-```
+1. **Resource Group**: Contains all Azure resources
+2. **Azure Container Registry (ACR)**: Stores Docker images
+3. **Azure Kubernetes Service (AKS)**: Orchestrates containerized applications
+4. **Storage Account**: Provides persistent storage with file shares
+5. **Log Analytics Workspace**: Centralized logging and monitoring
 
-## 🗑️ **Removed Files**
+### Kubernetes Resources
 
-The following problematic files were removed during refactoring:
-- `main-old.tf` (complex version with deployment issues)
-- `storage-private-endpoint.tf` (caused VNet integration problems)
-- `secure-storage-setup.sh` (unnecessary complexity)
-- `deploy-with-retry.sh` (redundant)
-- Various backup and temporary files
+1. **FastAPI Deployment**: Main application deployment with 2 replicas
+2. **Services**: 
+   - ClusterIP service for internal communication
+   - LoadBalancer service for external access
+3. **ConfigMap**: Contains application configuration
+4. **Secrets**: Contains ACR credentials and Azure storage keys
+5. **PersistentVolumeClaim**: Mounts Azure File Share storage
+6. **StorageClass**: Configures Azure Files CSI driver
 
-## 🎯 **Key Improvements**
+## Deployment Process
 
-### **1. Simplified Terraform Configuration**
-- ✅ **Working Container App deployment** - No more timeouts
-- ✅ **Reliable file share creation** - Uses standard Terraform resources
-- ✅ **Proper dependency chain** - Clean resource relationships
-- ✅ **Admin registry access** - Ensures image push/pull works
+### Prerequisites
+- Azure CLI installed and authenticated
+- Docker installed
+- Terraform installed
+- kubectl installed
 
-### **2. Clean External Access Solution**
-- ✅ **Azure AD authentication** for external storage operations
-- ✅ **Multiple access methods** (CLI, GUI, PowerShell, REST API)
-- ✅ **Comprehensive testing tools** with `external-storage-access.sh`
-
-### **3. Security & Compliance**
-- ✅ **Managed Identity** for service authentication
-- ✅ **RBAC permissions** with least-privilege access
-- ✅ **Infrastructure encryption** enabled
-- ✅ **HTTPS-only access** for Container Apps
-
-## 🚀 **Quick Start Instructions**
-
-### **Complete Deployment**
+### Step 1: Build and Push Docker Image
 ```bash
-cd azure-scripts
-./full-deploy.sh latest
+./docker-build-push.sh
 ```
 
-### **Test External Access**
+### Step 2: Deploy Infrastructure
+```bash
+terraform init
+terraform plan
+terraform apply
+```
+
+### Step 3: Configure kubectl
+```bash
+az aks get-credentials --resource-group <resource-group> --name <aks-cluster-name>
+```
+
+### Step 4: Verify Deployment
+```bash
+kubectl get pods
+kubectl get services
+kubectl get pvc
+```
+
+## Key Features
+
+- **Scalable**: AKS provides automatic scaling capabilities
+- **Persistent Storage**: Azure File Share integration for data persistence
+- **Secure**: RBAC-enabled with system-assigned managed identity
+- **Load Balanced**: Built-in load balancing through Kubernetes services
+- **Health Monitoring**: Liveness and readiness probes configured
+
+## Configuration
+
+The application is configured through:
+- Environment variables in the Kubernetes deployment
+- ConfigMap for non-sensitive configuration (`/app/config/config.toml`)
+- Secrets for sensitive data (ACR credentials, storage keys)
+- Azure File Share mount at `/data` for persistent data
+
+## External Storage Access
+
+The deployment includes Azure File Share integration with external access capabilities:
+
 ```bash
 # Test connectivity
 ./external-storage-access.sh test
 
-# Upload a file
-echo "Hello from external access!" > test.txt
-./external-storage-access.sh upload test.txt
-
 # List files
 ./external-storage-access.sh list
 
-# Download a file
-./external-storage-access.sh download test.txt downloaded-test.txt
+# Upload files
+./external-storage-access.sh upload local-file.txt
+
+# Download files
+./external-storage-access.sh download remote-file.txt
 ```
 
-## ✅ **What Works Now**
+## Security Features
 
-1. **✅ Terraform deploys successfully** - No configuration errors
-2. **✅ File share appears in storage account** - Immediately visible
-3. **✅ Container App starts properly** - No deployment timeouts
-4. **✅ External storage access works** - Upload/download functionality
-5. **✅ Persistent volume mounted** - `/data` directory accessible
-6. **✅ All scripts work correctly** - No missing dependencies
+- **Managed Identity**: System-assigned identity for AKS cluster
+- **RBAC**: Role-based access control enabled
+- **ACR Integration**: Secure image pulling with role assignments
+- **Storage Security**: Infrastructure encryption enabled
+- **Network Security**: Configurable network access restrictions
 
-## 🔧 **Architecture**
+## Monitoring and Logs
 
+- **Application logs**: `kubectl logs -f deployment/fastapi-app`
+- **Pod status**: `kubectl get pods -o wide`
+- **Service status**: `kubectl get services`
+- **Storage status**: `kubectl get pvc`
+
+## Resource Configuration
+
+### AKS Cluster
+- **Node Pool**: 1 node, Standard_B2s VM size
+- **Kubernetes Version**: 1.28
+- **Network Plugin**: kubenet
+- **DNS Prefix**: Based on project name
+
+### Application Deployment
+- **Replicas**: 2 pods for high availability
+- **CPU Limits**: 500m per container
+- **Memory Limits**: 512Mi per container
+- **Health Checks**: Configured liveness and readiness probes
+
+### Storage
+- **File Share Quota**: 3GB (configurable)
+- **Storage Class**: Azure Files with Standard_LRS
+- **Mount Options**: Optimized for Linux containers
+- **Access Mode**: ReadWriteMany
+
+## Accessing the Application
+
+The application is accessible via:
+1. **LoadBalancer Service**: External IP provided by Azure Load Balancer
+2. **Health Endpoint**: `/health` - Application health check
+3. **Ready Endpoint**: `/ready` - Application readiness check
+
+Get the external IP:
+```bash
+kubectl get service fastapi-loadbalancer
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Azure Resource Group                     │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐    ┌──────────────────────────────────┐ │
-│  │ Container Apps  │◄───┤         Storage Account         │ │
-│  │   Environment   │    │  ┌─────────────────────────────┐ │ │
-│  │                 │    │  │      Azure Files Share     │ │ │
-│  │ ┌─────────────┐ │    │  │     (Persistent Data)      │ │ │
-│  │ │ FastAPI App │ │    │  │   + External Access        │ │ │
-│  │ │ /data mount │ │    │  └─────────────────────────────┘ │ │
-│  │ └─────────────┘ │    └──────────────────────────────────┘ │
-│  └─────────────────┘                    ▲                   │
-│           ▲                             │                   │
-│           │                             │                   │
-│  ┌─────────────────┐           ┌────────┴────────┐          │
-│  │ Managed Identity│───────────► RBAC Roles      │          │
-│  │ Authentication  │           │ • Storage File  │          │
-│  │                 │           │   Data SMB      │          │
-│  │                 │           │   Share Contrib │          │
-│  └─────────────────┘           └─────────────────┘          │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │              External Access Methods                    │ │
-│  │  • Azure CLI (./external-storage-access.sh)           │ │
-│  │  • Azure Storage Explorer with AAD                     │ │
-│  │  • PowerShell with Azure modules                       │ │
-│  │  • REST API with OAuth tokens                          │ │
-│  └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+
+## Cleanup
+
+To remove all resources:
+```bash
+./terraform-cleanup.sh
 ```
 
-## 🎯 **Mission Accomplished**
+This will destroy the entire infrastructure including the AKS cluster, storage, and all associated resources.
 
-✅ **Persistent data volume** - Always accessible at `/data` in Container App
-✅ **External accessibility** - Multiple secure methods for upload/download
-✅ **Security compliance** - No shared keys, Azure AD authentication
-✅ **Reliable deployment** - No more configuration errors or timeouts
-✅ **Clean codebase** - Simplified, maintainable Terraform configuration
+## Troubleshooting
 
-The solution now provides robust persistent storage with external access while maintaining all security requirements!
+### Common Issues
+
+1. **Pods not starting**: Check image pull secrets and ACR permissions
+2. **Storage mount issues**: Verify file share exists and storage secret is correct
+3. **External access issues**: Check LoadBalancer service configuration
+
+### Debugging Commands
+
+```bash
+# Check pod status
+kubectl describe pod <pod-name>
+
+# Check deployment status
+kubectl describe deployment fastapi-app
+
+# Check storage mounting
+kubectl describe pvc fastapi-pvc
+
+# Check service endpoints
+kubectl get endpoints
+```
+
+## Migration from Container Apps
+
+This deployment has been migrated from Azure Container Apps to AKS to provide:
+- Better scalability options
+- More control over networking
+- Enhanced monitoring capabilities
+- Direct Kubernetes resource management
+- Improved storage integration
+
+All Container Apps-specific configurations have been removed and replaced with Kubernetes-native resources.

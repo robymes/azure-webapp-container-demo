@@ -1,129 +1,207 @@
-# Azure Deployment Scripts
+# Azure Kubernetes Service (AKS) Deployment Scripts
 
-This folder contains the simplified and reliable Azure deployment configuration for the FastAPI Container Apps solution with persistent storage and external access.
+This directory contains scripts and Terraform configurations for deploying a FastAPI application on Azure Kubernetes Service (AKS).
 
-## 📁 File Structure
+## Files Overview
 
-### Core Terraform Files
-- **[`main.tf`](main.tf)** - Main infrastructure configuration (simplified approach)
-- **[`variables.tf`](variables.tf)** - Terraform variable definitions
-- **[`outputs.tf`](outputs.tf)** - Terraform outputs for deployment info
-- **[`provider.tf`](provider.tf)** - Azure provider configuration
+### Terraform Configuration
+- `main.tf` - Main infrastructure definition (AKS, ACR, Storage, Kubernetes resources)
+- `variables.tf` - Variable definitions
+- `outputs.tf` - Output values after deployment
+- `provider.tf` - Azure provider configuration
 
 ### Deployment Scripts
-- **[`full-deploy.sh`](full-deploy.sh)** - Complete deployment script (recommended)
-- **[`docker-build-push.sh`](docker-build-push.sh)** - Build and push Docker image
-
-### External Storage Access
-- **[`external-storage-access.sh`](external-storage-access.sh)** - External storage access script
-
-### Utility Scripts
-- **[`terraform-cleanup.sh`](terraform-cleanup.sh)** - Terraform cleanup
+- `docker-build-push.sh` - Builds Docker image and pushes to Azure Container Registry
+- `external-storage-access.sh` - Configures external access to Azure Storage
+- `terraform-cleanup.sh` - Destroys all Terraform-managed resources
 
 ### Documentation
-- **[`README.md`](README.md)** - This comprehensive guide
-- **[`DEPLOYMENT-SUMMARY.md`](DEPLOYMENT-SUMMARY.md)** - Refactoring summary
+- `DEPLOYMENT-SUMMARY.md` - Detailed deployment architecture and process
+- `README.md` - This file
 
-## 🚀 Quick Deployment
+## Quick Start
 
-### Option 1: Complete Deployment (Recommended)
-```bash
-cd azure-scripts
-./full-deploy.sh latest
-```
+1. **Configure Variables**
+   ```bash
+   # Edit variables.tf or create terraform.tfvars
+   cp variables.tf terraform.tfvars
+   # Edit terraform.tfvars with your values
+   ```
 
-### Option 2: Manual Terraform Deployment
-```bash
-cd azure-scripts
+2. **Build and Push Docker Image**
+   ```bash
+   ./docker-build-push.sh
+   ```
 
-# 1. Deploy infrastructure
-terraform init
-terraform apply
+3. **Deploy Infrastructure**
+   ```bash
+   terraform init
+   terraform plan
+   terraform apply
+   ```
 
-# 2. Build and push Docker image
-./docker-build-push.sh latest
+4. **Access Your Application**
+   ```bash
+   # Get AKS credentials
+   az aks get-credentials --resource-group <resource-group> --name <aks-cluster-name>
+   
+   # Check deployment status
+   kubectl get pods
+   kubectl get services
+   kubectl get pvc
+   
+   # Get external IP
+   kubectl get service fastapi-loadbalancer
+   ```
 
-# 3. Update container app manually
-az containerapp update \
-  --name $(terraform output -raw container_app_name) \
-  --resource-group $(terraform output -raw resource_group_name) \
-  --image "$(terraform output -raw container_registry_login_server)/fastapi-app:latest" \
-  --target-port 8000
-```
+## Prerequisites
 
-## 📋 Prerequisites
+- Azure CLI (authenticated with `az login`)
+- Docker
+- Terraform >= 1.0
+- kubectl
 
-- ✅ **Azure CLI** installed and logged in (`az login`)
-- ✅ **Terraform** installed (>= 1.0)
-- ✅ **Docker** installed and running
+## Architecture
 
-## 🔧 Key Features
+The deployment creates:
+- **AKS Cluster**: Managed Kubernetes service with system-assigned identity
+- **Azure Container Registry**: For storing Docker images
+- **Azure Storage Account**: For persistent data storage via Azure Files
+- **Kubernetes Resources**: Deployments, services, persistent volumes, and configuration
+
+## Key Features
 
 ### Infrastructure
-- **Azure Container Apps** - Serverless container hosting
-- **Azure Container Registry** - Private Docker registry
-- **Azure Storage Account** - Persistent file storage
-- **Azure Files** - SMB-based persistent storage with external access
-- **Managed Identity** - Secure authentication without stored credentials
+- **Scalable AKS cluster** with configurable node pools
+- **Azure Container Registry** with admin access for deployment
+- **Azure File Share** integration for persistent storage
+- **LoadBalancer service** for external application access
 
-### External Storage Access
-After deployment, you can access the persistent storage externally:
+### Security
+- **System-assigned managed identity** for AKS
+- **Role-based access control** (RBAC) enabled
+- **ACR integration** with proper role assignments
+- **Infrastructure encryption** for storage account
+- **Configurable network access restrictions**
+
+### Application Deployment
+- **FastAPI application** with 2 replicas for high availability
+- **Health and readiness probes** for reliable operations
+- **ConfigMap and Secrets** for configuration management
+- **Persistent volume mounting** at `/data` directory
+
+## Configuration
+
+Key configuration files:
+- `terraform.tfvars` - Infrastructure variables
+- Kubernetes manifests are embedded in `main.tf`
+- Application configuration via ConfigMap at `/app/config/config.toml`
+- Storage credentials via Kubernetes secrets
+
+## External Storage Access
+
+Access the Azure File Share externally using the storage access script:
 
 ```bash
-# List files
-./external-storage-access.sh list
-
-# Upload files
-./external-storage-access.sh upload local-file.txt
-
-# Download files
-./external-storage-access.sh download remote-file.txt
-
 # Test connectivity
 ./external-storage-access.sh test
+
+# List files in the share
+./external-storage-access.sh list
+
+# Upload a local file
+./external-storage-access.sh upload ./local-file.txt remote-file.txt
+
+# Download a remote file
+./external-storage-access.sh download remote-file.txt ./local-file.txt
+
+# Create directories
+./external-storage-access.sh mkdir uploads
+
+# Get file information
+./external-storage-access.sh info remote-file.txt
 ```
 
-## 🔒 Security Features
+## Monitoring
 
-- **Managed Identity authentication** for Azure services
-- **HTTPS-only access** for Container Apps
-- **Infrastructure encryption** for storage
-- **RBAC permissions** with least-privilege access
-- **Private container registry** with admin access for deployment
-
-## 📊 Monitoring
-
-Check deployment outputs:
+### Kubernetes Monitoring
 ```bash
-terraform output
+# Check pod status
+kubectl get pods -o wide
+
+# View application logs
+kubectl logs -f deployment/fastapi-app
+
+# Check service endpoints
+kubectl get services
+kubectl get endpoints
+
+# Monitor persistent storage
+kubectl get pvc
+kubectl get pv
 ```
 
-View Container App logs:
+### Resource Monitoring
 ```bash
-az containerapp logs show \
-  --name $(terraform output -raw container_app_name) \
-  --resource-group $(terraform output -raw resource_group_name) \
-  --follow
+# Check node status
+kubectl get nodes
+
+# View resource usage
+kubectl top nodes
+kubectl top pods
 ```
 
-## 🧹 Cleanup
+## Scaling
 
-Remove all deployed resources:
+### Manual Scaling
+```bash
+# Scale the application
+kubectl scale deployment fastapi-app --replicas=3
+
+# Scale cluster nodes (if needed)
+az aks scale --resource-group <resource-group> --name <aks-cluster-name> --node-count 2
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Image pull failures**: Check ACR permissions and secret configuration
+2. **Pod startup issues**: Verify resource limits and health probe configurations
+3. **Storage mounting problems**: Check file share existence and storage secrets
+4. **External access issues**: Verify LoadBalancer service and Azure Load Balancer configuration
+
+### Debug Commands
+
+```bash
+# Describe resources for detailed information
+kubectl describe pod <pod-name>
+kubectl describe deployment fastapi-app
+kubectl describe service fastapi-loadbalancer
+kubectl describe pvc fastapi-pvc
+
+# Check events
+kubectl get events --sort-by=.metadata.creationTimestamp
+
+# Test connectivity
+kubectl exec -it <pod-name> -- /bin/bash
+```
+
+## Cleanup
+
+To remove all resources:
 ```bash
 ./terraform-cleanup.sh
 ```
 
-## 📚 Additional Resources
+**Warning**: This will permanently delete the AKS cluster and all associated resources including data.
 
-- [Main Project Documentation](../docs/)
-- [API Documentation](../docs/api.md)
-- [Persistent Storage Guide](../docs/persistent-storage-external-access.md)
-- [Troubleshooting Guide](../docs/troubleshooting.md)
+## Migration Notes
 
-## 💡 Tips
+This deployment has been migrated from Azure Container Apps to AKS to provide:
+- Enhanced scalability and control
+- Better integration with Kubernetes ecosystem
+- More flexible networking options
+- Direct access to Kubernetes resources and features
 
-1. **First deployment**: Use `./full-deploy.sh latest` for complete setup
-2. **Updates**: Use `./docker-build-push.sh <tag>` and then manually update the container app
-3. **External access**: Always test with `./external-storage-access.sh test` after deployment
-4. **Debugging**: Check Terraform outputs with `terraform output` for all resource details
-5. **Cleanup**: Use `./terraform-cleanup.sh` to remove all resources when done
+All Container Apps-specific references have been removed and replaced with AKS/Kubernetes equivalents.

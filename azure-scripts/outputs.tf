@@ -42,43 +42,33 @@ output "file_share_name" {
   value       = var.file_share_name
 }
 
-# Container Apps outputs
-output "container_app_environment_name" {
-  description = "Name of the Container App Environment"
-  value       = azurerm_container_app_environment.main.name
+# AKS outputs
+output "aks_cluster_name" {
+  description = "Name of the AKS cluster"
+  value       = azurerm_kubernetes_cluster.main.name
 }
 
-output "container_app_name" {
-  description = "Name of the created container app"
-  value       = azurerm_container_app.main.name
+output "aks_cluster_fqdn" {
+  description = "FQDN of the AKS cluster"
+  value       = azurerm_kubernetes_cluster.main.fqdn
 }
 
-output "container_app_url" {
-  description = "URL of the deployed container app"
-  value       = "https://${azurerm_container_app.main.ingress[0].fqdn}"
+output "aks_cluster_kube_config" {
+  description = "Kubeconfig for the AKS cluster"
+  value       = azurerm_kubernetes_cluster.main.kube_config_raw
+  sensitive   = true
 }
 
-output "container_app_fqdn" {
-  description = "FQDN of the container app"
-  value       = azurerm_container_app.main.ingress[0].fqdn
-}
-
-output "api_endpoints" {
-  description = "Available API endpoints"
-  value = {
-    health_check = "https://${azurerm_container_app.main.ingress[0].fqdn}/health"
-    write_file   = "https://${azurerm_container_app.main.ingress[0].fqdn}/write-file"
-    list_files   = "https://${azurerm_container_app.main.ingress[0].fqdn}/list-files"
-    init_dwh     = "https://${azurerm_container_app.main.ingress[0].fqdn}/init-dwh"
-    query        = "https://${azurerm_container_app.main.ingress[0].fqdn}/query"
-  }
+output "aks_cluster_node_resource_group" {
+  description = "The auto-generated Resource Group which contains the resources for this Managed Kubernetes Cluster"
+  value       = azurerm_kubernetes_cluster.main.node_resource_group
 }
 
 # Storage and networking outputs
 
 output "managed_identity_principal_id" {
-  description = "Principal ID of the Container App's managed identity"
-  value       = azurerm_container_app.main.identity[0].principal_id
+  description = "Principal ID of the AKS cluster's managed identity"
+  value       = azurerm_kubernetes_cluster.main.identity[0].principal_id
   sensitive   = true
 }
 
@@ -87,11 +77,11 @@ output "external_access_info" {
   description = "Information for external access to Azure Files"
   value = {
     storage_account_name = azurerm_storage_account.main.name
-    file_share_name     = var.file_share_name
-    resource_group_name = azurerm_resource_group.main.name
-    access_method       = "Azure AD Authentication (Managed Identity)"
-    script_path         = "./external-storage-access.sh"
-    authentication_note = "No shared keys required - uses Azure AD"
+    file_share_name      = var.file_share_name
+    resource_group_name  = azurerm_resource_group.main.name
+    access_method        = "Azure AD Authentication (Managed Identity)"
+    script_path          = "./external-storage-access.sh"
+    authentication_note  = "No shared keys required - uses Azure AD"
   }
 }
 
@@ -99,25 +89,52 @@ output "external_access_info" {
 output "security_configuration" {
   description = "Summary of security configuration"
   value = {
-    shared_key_access_enabled   = true  # Simplified deployment approach
-    infrastructure_encryption   = var.enable_infrastructure_encryption
-    managed_identity_auth       = true
-    external_storage_access     = true
+    shared_key_access_enabled = var.allow_shared_key_access
+    infrastructure_encryption = var.enable_infrastructure_encryption
+    managed_identity_auth     = true
+    external_storage_access   = true
   }
 }
 
 output "deployment_info" {
   description = "Complete deployment information"
   value = {
-    resource_group             = azurerm_resource_group.main.name
-    location                  = azurerm_resource_group.main.location
-    container_app_name        = azurerm_container_app.main.name
-    container_app_url         = "https://${azurerm_container_app.main.ingress[0].fqdn}"
-    container_app_environment = azurerm_container_app_environment.main.name
-    storage_account           = azurerm_storage_account.main.name
-    file_share                = var.file_share_name
-    container_registry        = azurerm_container_registry.main.name
-    container_registry_url    = azurerm_container_registry.main.login_server
-    docker_image              = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+    resource_group         = azurerm_resource_group.main.name
+    location               = azurerm_resource_group.main.location
+    aks_cluster_name       = azurerm_kubernetes_cluster.main.name
+    aks_cluster_fqdn       = azurerm_kubernetes_cluster.main.fqdn
+    storage_account        = azurerm_storage_account.main.name
+    file_share             = var.file_share_name
+    container_registry     = azurerm_container_registry.main.name
+    container_registry_url = azurerm_container_registry.main.login_server
+    docker_image          = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+  }
+}
+
+# Kubernetes Application Access Information
+output "application_access" {
+  description = "External access information for the FastAPI application"
+  value = {
+    loadbalancer_service = kubernetes_service_v1.fastapi_loadbalancer.metadata[0].name
+    external_ip_note     = "Run 'kubectl get svc fastapi-loadbalancer' to get the external IP"
+    kubectl_command      = "kubectl get svc fastapi-loadbalancer -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
+    application_url      = "http://<EXTERNAL_IP>"
+    health_check_url     = "http://<EXTERNAL_IP>/health"
+  }
+}
+
+# Kubernetes Configuration Summary
+output "kubernetes_deployment_summary" {
+  description = "Summary of Kubernetes resources deployed"
+  value = {
+    deployment_name           = kubernetes_deployment_v1.fastapi_app.metadata[0].name
+    service_name             = kubernetes_service_v1.fastapi_service.metadata[0].name
+    loadbalancer_service     = kubernetes_service_v1.fastapi_loadbalancer.metadata[0].name
+    persistent_volume_claim  = kubernetes_persistent_volume_claim_v1.fastapi_pvc.metadata[0].name
+    config_map              = kubernetes_config_map_v1.fastapi_config.metadata[0].name
+    storage_class           = kubernetes_storage_class_v1.azure_file.metadata[0].name
+    replicas               = kubernetes_deployment_v1.fastapi_app.spec[0].replicas
+    container_image        = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+    data_mount_path        = "/data"
   }
 }

@@ -44,6 +44,26 @@ async def health_check():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe for Kubernetes"""
+    try:
+        # Basic readiness check - ensure app is ready to serve requests
+        volume_accessible = os.path.exists(PERSISTENT_VOLUME_PATH)
+        
+        if volume_accessible:
+            return {
+                "status": "ready",
+                "timestamp": datetime.now().isoformat(),
+                "volume_path": PERSISTENT_VOLUME_PATH
+            }
+        else:
+            raise HTTPException(status_code=503, detail="Persistent volume not accessible")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Readiness check failed: {str(e)}")
+
 @app.post("/write-file", response_model=WriteFileResponse)
 async def write_file(request: WriteFileRequest):
     """
