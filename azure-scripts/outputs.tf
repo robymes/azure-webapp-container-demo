@@ -38,8 +38,8 @@ output "storage_account_name" {
 }
 
 output "file_share_name" {
-  description = "Name of the file share (only when shared key access is enabled)"
-  value       = var.allow_shared_key_access ? azurerm_storage_share.main[0].name : "N/A - Shared key access disabled"
+  description = "Name of the file share for persistent storage"
+  value       = var.file_share_name
 }
 
 # Container Apps outputs
@@ -74,6 +74,38 @@ output "api_endpoints" {
   }
 }
 
+# Storage and networking outputs
+
+output "managed_identity_principal_id" {
+  description = "Principal ID of the Container App's managed identity"
+  value       = azurerm_container_app.main.identity[0].principal_id
+  sensitive   = true
+}
+
+# External Access Information
+output "external_access_info" {
+  description = "Information for external access to Azure Files"
+  value = {
+    storage_account_name = azurerm_storage_account.main.name
+    file_share_name     = var.file_share_name
+    resource_group_name = azurerm_resource_group.main.name
+    access_method       = "Azure AD Authentication (Managed Identity)"
+    script_path         = "./external-storage-access.sh"
+    authentication_note = "No shared keys required - uses Azure AD"
+  }
+}
+
+# Security Configuration Summary
+output "security_configuration" {
+  description = "Summary of security configuration"
+  value = {
+    shared_key_access_enabled   = true  # Simplified deployment approach
+    infrastructure_encryption   = var.enable_infrastructure_encryption
+    managed_identity_auth       = true
+    external_storage_access     = true
+  }
+}
+
 output "deployment_info" {
   description = "Complete deployment information"
   value = {
@@ -83,7 +115,7 @@ output "deployment_info" {
     container_app_url         = "https://${azurerm_container_app.main.ingress[0].fqdn}"
     container_app_environment = azurerm_container_app_environment.main.name
     storage_account           = azurerm_storage_account.main.name
-    file_share                = var.allow_shared_key_access ? azurerm_storage_share.main[0].name : "N/A - Shared key access disabled"
+    file_share                = var.file_share_name
     container_registry        = azurerm_container_registry.main.name
     container_registry_url    = azurerm_container_registry.main.login_server
     docker_image              = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"

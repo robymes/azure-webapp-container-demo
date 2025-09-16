@@ -128,3 +128,40 @@ variable "enable_network_restriction" {
   type        = bool
   default     = true
 }
+
+# Private Endpoint and VNet Integration Variables
+variable "enable_vnet_integration" {
+  description = "Enable VNet integration for Container Apps Environment"
+  type        = bool
+  default     = false
+}
+
+variable "allowed_ip_ranges" {
+  description = "List of allowed IP ranges for storage access when using private endpoints"
+  type        = list(string)
+  default     = []
+}
+
+variable "vnet_address_space" {
+  description = "Address space for the virtual network"
+  type        = list(string)
+  default     = ["10.0.0.0/16"]
+}
+
+variable "private_endpoints_subnet_address_prefix" {
+  description = "Address prefix for the private endpoints subnet"
+  type        = string
+  default     = "10.0.1.0/24"
+}
+
+variable "container_apps_subnet_address_prefix" {
+  description = "Address prefix for the container apps subnet"
+  type        = string
+  default     = "10.0.2.0/23"
+}
+
+variable "enable_advanced_storage_permissions" {
+  description = "Enable advanced storage permissions for Container App Managed Identity"
+  type        = bool
+  default     = false
+}
