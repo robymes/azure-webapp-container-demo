@@ -107,7 +107,7 @@ output "deployment_info" {
     file_share             = var.file_share_name
     container_registry     = azurerm_container_registry.main.name
     container_registry_url = azurerm_container_registry.main.login_server
-    docker_image          = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+    docker_image           = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
   }
 }
 
@@ -123,18 +123,45 @@ output "application_access" {
   }
 }
 
+# Azure AD Authentication and Workload Identity outputs
+output "workload_identity_client_id" {
+  description = "Client ID of the user-assigned managed identity for workload identity"
+  value       = azurerm_user_assigned_identity.aks_workload_identity.client_id
+}
+
+output "oidc_issuer_url" {
+  description = "OIDC issuer URL for the AKS cluster"
+  value       = azurerm_kubernetes_cluster.main.oidc_issuer_url
+}
+
+output "storage_account_id" {
+  description = "Resource ID of the storage account"
+  value       = azurerm_storage_account.main.id
+}
+
+output "azure_location" {
+  description = "Azure location for resources"
+  value       = azurerm_resource_group.main.location
+}
+
+# Updated ACR name output for convenience
+output "acr_name" {
+  description = "Name of the Azure Container Registry"
+  value       = azurerm_container_registry.main.name
+}
+
 # Kubernetes Configuration Summary
 output "kubernetes_deployment_summary" {
   description = "Summary of Kubernetes resources deployed"
   value = {
-    deployment_name           = kubernetes_deployment_v1.fastapi_app.metadata[0].name
-    service_name             = kubernetes_service_v1.fastapi_service.metadata[0].name
-    loadbalancer_service     = kubernetes_service_v1.fastapi_loadbalancer.metadata[0].name
-    persistent_volume_claim  = kubernetes_persistent_volume_claim_v1.fastapi_pvc.metadata[0].name
+    deployment_name         = kubernetes_deployment_v1.fastapi_app.metadata[0].name
+    service_name            = kubernetes_service_v1.fastapi_service.metadata[0].name
+    loadbalancer_service    = kubernetes_service_v1.fastapi_loadbalancer.metadata[0].name
+    persistent_volume_claim = kubernetes_persistent_volume_claim_v1.fastapi_pvc.metadata[0].name
     config_map              = kubernetes_config_map_v1.fastapi_config.metadata[0].name
     storage_class           = kubernetes_storage_class_v1.azure_file.metadata[0].name
-    replicas               = kubernetes_deployment_v1.fastapi_app.spec[0].replicas
-    container_image        = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
-    data_mount_path        = "/data"
+    replicas                = kubernetes_deployment_v1.fastapi_app.spec[0].replicas
+    container_image         = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+    data_mount_path         = "/data"
   }
 }

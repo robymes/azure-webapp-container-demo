@@ -48,11 +48,17 @@ resource "azurerm_storage_account" "main" {
 }
 
 # Azure File Share for persistent storage
+# Uses Azure AD authentication with proper role assignments
 resource "azurerm_storage_share" "main" {
   name                 = var.file_share_name
   storage_account_name = azurerm_storage_account.main.name
   quota                = var.file_share_quota
   access_tier          = "Hot"
+
+  depends_on = [
+    azurerm_role_assignment.terraform_storage_contributor,
+    azurerm_role_assignment.terraform_storage_blob_contributor
+  ]
 }
 
 # AKS Cluster with minimal configuration for demo
@@ -80,12 +86,16 @@ resource "azurerm_kubernetes_cluster" "main" {
     type = "SystemAssigned"
   }
 
+  # Enable workload identity and OIDC issuer for Azure AD authentication
+  workload_identity_enabled = true
+  oidc_issuer_enabled       = true
+
   # Basic configuration - no advanced features for demo
   network_profile {
     network_plugin = "kubenet"
   }
 
-  # Disable unnecessary features for demo
+  # Enable RBAC for security compliance
   role_based_access_control_enabled = true
 
   tags = var.tags
@@ -141,10 +151,7 @@ resource "kubernetes_persistent_volume_v1" "azure_file_pv" {
           storageAccount = azurerm_storage_account.main.name
           shareName      = azurerm_storage_share.main.name
         }
-        node_stage_secret_ref {
-          name      = "azure-storage-secret"
-          namespace = "default"
-        }
+        # Removed node_stage_secret_ref - using Azure AD authentication via workload identity
       }
     }
   }
@@ -176,7 +183,8 @@ resource "kubernetes_persistent_volume_claim_v1" "fastapi_pvc" {
   depends_on = [kubernetes_persistent_volume_v1.azure_file_pv]
 }
 
-# Secret for Azure Storage Account credentials
+# Secret for Azure Storage Account - Using Azure AD authentication
+# No storage account key required with workload identity
 resource "kubernetes_secret_v1" "azure_storage_secret" {
   metadata {
     name      = "azure-storage-secret"
@@ -185,12 +193,31 @@ resource "kubernetes_secret_v1" "azure_storage_secret" {
 
   data = {
     azurestorageaccountname = azurerm_storage_account.main.name
-    azurestorageaccountkey  = azurerm_storage_account.main.primary_access_key
+    # Removed azurestorageaccountkey - using Azure AD authentication instead
   }
 
   type = "Opaque"
 
   depends_on = [azurerm_kubernetes_cluster.main]
+}
+
+# Service Account for workload identity
+resource "kubernetes_service_account_v1" "fastapi_serviceaccount" {
+  metadata {
+    name      = "fastapi-serviceaccount"
+    namespace = "default"
+    labels = {
+      "azure.workload.identity/use" = "true"
+    }
+    annotations = {
+      "azure.workload.identity/client-id" = azurerm_user_assigned_identity.aks_workload_identity.client_id
+    }
+  }
+
+  depends_on = [
+    azurerm_kubernetes_cluster.main,
+    azurerm_user_assigned_identity.aks_workload_identity
+  ]
 }
 
 # ConfigMap for FastAPI application configuration
@@ -248,6 +275,8 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
       }
 
       spec {
+        service_account_name = kubernetes_service_account_v1.fastapi_serviceaccount.metadata[0].name
+
         container {
           image = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
           name  = "fastapi-app"
@@ -262,13 +291,13 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
           }
 
           env {
-            name = "AZURE_STORAGE_ACCOUNT"
-            value_from {
-              config_map_key_ref {
-                name = kubernetes_config_map_v1.fastapi_config.metadata[0].name
-                key  = "azure_storage_account"
-              }
-            }
+            name  = "AZURE_STORAGE_ACCOUNT"
+            value = azurerm_storage_account.main.name
+          }
+
+          env {
+            name  = "AZURE_USE_WORKLOAD_IDENTITY"
+            value = "true"
           }
 
           volume_mount {
@@ -336,7 +365,8 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
   depends_on = [
     kubernetes_persistent_volume_claim_v1.fastapi_pvc,
     kubernetes_config_map_v1.fastapi_config,
-    kubernetes_secret_v1.acr_secret
+    kubernetes_secret_v1.acr_secret,
+    kubernetes_service_account_v1.fastapi_serviceaccount
   ]
 }
 
@@ -437,4 +467,65 @@ resource "azurerm_role_assignment" "storage_file_smb_contributor" {
   principal_id         = azurerm_kubernetes_cluster.main.identity[0].principal_id
 
   depends_on = [azurerm_kubernetes_cluster.main]
+}
+
+# Get current client configuration for role assignments
+data "azurerm_client_config" "current" {}
+
+# User-assigned managed identity for Kubernetes workload identity
+resource "azurerm_user_assigned_identity" "aks_workload_identity" {
+  name                = "${var.project_name}-workload-identity"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+
+  tags = var.tags
+}
+
+# Role assignment for workload identity to access storage account
+resource "azurerm_role_assignment" "workload_identity_storage_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage File Data SMB Share Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks_workload_identity.principal_id
+
+  depends_on = [azurerm_user_assigned_identity.aks_workload_identity]
+}
+
+resource "azurerm_role_assignment" "workload_identity_storage_blob_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks_workload_identity.principal_id
+
+  depends_on = [azurerm_user_assigned_identity.aks_workload_identity]
+}
+
+# Role assignment for current service principal (Terraform) to access storage
+resource "azurerm_role_assignment" "terraform_storage_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage File Data SMB Share Contributor"
+  principal_id         = data.azurerm_client_config.current.object_id
+
+  depends_on = [azurerm_storage_account.main]
+}
+
+resource "azurerm_role_assignment" "terraform_storage_blob_contributor" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = data.azurerm_client_config.current.object_id
+
+  depends_on = [azurerm_storage_account.main]
+}
+
+# Federated identity credential for AKS workload identity
+resource "azurerm_federated_identity_credential" "aks_workload_identity" {
+  name                = "${var.project_name}-federated-identity"
+  resource_group_name = azurerm_resource_group.main.name
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  parent_id           = azurerm_user_assigned_identity.aks_workload_identity.id
+  subject             = "system:serviceaccount:default:fastapi-serviceaccount"
+
+  depends_on = [
+    azurerm_kubernetes_cluster.main,
+    azurerm_user_assigned_identity.aks_workload_identity
+  ]
 }
