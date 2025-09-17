@@ -26,7 +26,7 @@ variable "container_registry_name_prefix" {
 variable "container_registry_sku" {
   description = "SKU for the Azure Container Registry"
   type        = string
-  default     = "Basic"
+  default     = "Premium"
 }
 
 
@@ -94,3 +94,34 @@ variable "enable_network_restriction" {
   type        = bool
   default     = true
 }
+
+variable "vnet_address_space" {
+  description = "Address space for the virtual network"
+  type        = list(string)
+  default     = ["10.0.0.0/16"]
+}
+
+variable "aks_subnet_address_prefix" {
+  description = "Address prefix for the AKS subnet"
+  type        = list(string)
+  default     = ["10.0.1.0/24"]
+}
+
+variable "private_endpoint_subnet_address_prefix" {
+  description = "Address prefix for the private endpoints subnet"
+  type        = list(string)
+  default     = ["10.0.2.0/24"]
+}
+
+variable "aks_service_cidr" {
+  description = "CIDR block for AKS services"
+  type        = string
+  default     = "172.16.0.0/16"
+}
+
+variable "aks_dns_service_ip" {
+  description = "IP address for AKS DNS service (must be within service CIDR)"
+  type        = string
+  default     = "172.16.0.10"
+}
+

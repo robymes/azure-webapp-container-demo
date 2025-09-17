@@ -19,17 +19,8 @@ output "container_registry_login_server" {
   value       = azurerm_container_registry.main.login_server
 }
 
-output "container_registry_admin_username" {
-  description = "Admin username for the container registry"
-  value       = azurerm_container_registry.main.admin_username
-  sensitive   = true
-}
-
-output "container_registry_admin_password" {
-  description = "Admin password for the container registry"
-  value       = azurerm_container_registry.main.admin_password
-  sensitive   = true
-}
+# ACR admin credentials removed for security compliance
+# AKS uses managed identity for ACR access
 
 # Storage account and file share outputs
 output "storage_account_name" {
@@ -89,10 +80,14 @@ output "external_access_info" {
 output "security_configuration" {
   description = "Summary of security configuration"
   value = {
-    shared_key_access_enabled = var.allow_shared_key_access
-    infrastructure_encryption = var.enable_infrastructure_encryption
-    managed_identity_auth     = true
-    external_storage_access   = true
+    shared_key_access_enabled     = false
+    public_network_access_enabled = false
+    infrastructure_encryption     = var.enable_infrastructure_encryption
+    managed_identity_auth         = true
+    private_endpoints_enabled     = true
+    host_encryption_enabled       = true
+    acr_admin_disabled           = true
+    external_storage_access      = true
   }
 }
 
@@ -163,5 +158,39 @@ output "kubernetes_deployment_summary" {
     replicas                = kubernetes_deployment_v1.fastapi_app.spec[0].replicas
     container_image         = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
     data_mount_path         = "/data"
+  }
+}
+
+# Network and Private Endpoint outputs
+output "virtual_network_id" {
+  description = "ID of the virtual network"
+  value       = azurerm_virtual_network.main.id
+}
+
+output "aks_subnet_id" {
+  description = "ID of the AKS subnet"
+  value       = azurerm_subnet.aks.id
+}
+
+output "private_endpoints_subnet_id" {
+  description = "ID of the private endpoints subnet"
+  value       = azurerm_subnet.private_endpoints.id
+}
+
+output "storage_private_endpoint_ip" {
+  description = "Private IP address of the storage account private endpoint"
+  value       = azurerm_private_endpoint.storage.private_service_connection[0].private_ip_address
+}
+
+output "acr_private_endpoint_ip" {
+  description = "Private IP address of the ACR private endpoint"
+  value       = azurerm_private_endpoint.acr.private_service_connection[0].private_ip_address
+}
+
+output "private_dns_zones" {
+  description = "Private DNS zones created"
+  value = {
+    storage = azurerm_private_dns_zone.storage.name
+    acr     = azurerm_private_dns_zone.acr.name
   }
 }

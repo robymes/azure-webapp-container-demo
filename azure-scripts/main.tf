@@ -19,15 +19,16 @@ resource "azurerm_container_registry" "main" {
   name                = "${var.container_registry_name_prefix}${random_integer.suffix.result}"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  sku                 = var.container_registry_sku
-  admin_enabled       = true # Enable for initial deployment
+  sku                 = "Premium" # Required for private endpoints
+  admin_enabled       = false # Security compliance - no admin access
+
+  # Disable public network access for security
+  public_network_access_enabled = false
 
   tags = var.tags
 }
 
-# SECURITY WORKAROUND: Storage account with temporary shared key access
-# The azurerm_storage_share resource requires key-based authentication during creation
-# We enable shared_access_key_enabled temporarily and disable it via null_resource after creation
+# Storage account with security compliance - no shared key access
 resource "azurerm_storage_account" "main" {
   name                              = "${var.storage_account_name_prefix}${random_integer.suffix.result}"
   resource_group_name               = azurerm_resource_group.main.name
@@ -36,26 +37,32 @@ resource "azurerm_storage_account" "main" {
   account_replication_type          = var.storage_account_replication_type
   infrastructure_encryption_enabled = var.enable_infrastructure_encryption
 
-  # Temporarily enable shared key access for File Share creation
-  shared_access_key_enabled     = true
-  public_network_access_enabled = var.allow_public_network_access
+  # Security compliance - disable shared key access
+  shared_access_key_enabled     = false
+  public_network_access_enabled = false
 
-  # Basic network rules - will be enhanced later
+  # Network rules for security compliance
   network_rules {
-    default_action = var.enable_network_restriction ? "Deny" : "Allow"
+    default_action = "Deny"
     bypass         = ["AzureServices"]
   }
 
   tags = var.tags
 }
 
-# Azure File Share for persistent storage
-# Uses Azure AD authentication with proper role assignments
-resource "azurerm_storage_share" "main" {
-  name                 = var.file_share_name
-  storage_account_name = azurerm_storage_account.main.name
-  quota                = var.file_share_quota
-  access_tier          = "Hot"
+# Azure File Share for persistent storage using AzAPI provider for Azure AD authentication
+resource "azapi_resource" "main" {
+  type      = "Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01"
+  name      = var.file_share_name
+  parent_id = "${azurerm_storage_account.main.id}/fileServices/default"
+
+  body = jsonencode({
+    properties = {
+      shareQuota  = var.file_share_quota
+      accessTier  = "Hot"
+      metadata    = {}
+    }
+  })
 
   depends_on = [
     azurerm_role_assignment.terraform_storage_contributor,
@@ -63,20 +70,30 @@ resource "azurerm_storage_share" "main" {
   ]
 }
 
-# SECURITY RESTORATION: Disable shared key access after File Share creation
-# This null_resource disables shared key access immediately after the File Share is created
-# ensuring compliance with security policies that prohibit key-based authentication
-resource "null_resource" "disable_shared_key" {
-  depends_on = [azurerm_storage_share.main]
-  
-  provisioner "local-exec" {
-    command = "az storage account update --name ${azurerm_storage_account.main.name} --resource-group ${azurerm_resource_group.main.name} --allow-shared-key-access false"
-  }
+# Virtual Network for private endpoints
+resource "azurerm_virtual_network" "main" {
+  name                = "${var.project_name}-vnet"
+  address_space       = [var.vnet_address_space[0]]
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
 
-  # Trigger to ensure this runs if storage account changes
-  triggers = {
-    storage_account_id = azurerm_storage_account.main.id
-  }
+  tags = var.tags
+}
+
+# Subnet for AKS
+resource "azurerm_subnet" "aks" {
+  name                 = "${var.project_name}-aks-subnet"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = var.aks_subnet_address_prefix
+}
+
+# Subnet for private endpoints
+resource "azurerm_subnet" "private_endpoints" {
+  name                 = "${var.project_name}-pe-subnet"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = var.private_endpoint_subnet_address_prefix
 }
 
 # AKS Cluster with minimal configuration for demo
@@ -87,7 +104,7 @@ resource "azurerm_kubernetes_cluster" "main" {
   dns_prefix          = "${var.project_name}-aks"
 
   # Minimal configuration for demo
-  kubernetes_version = "1.28"
+  # Using default supported kubernetes version (removed specific version to avoid LTS compatibility issues)
 
   default_node_pool {
     name       = "default"
@@ -95,8 +112,11 @@ resource "azurerm_kubernetes_cluster" "main" {
     vm_size    = "Standard_B2s"
     type       = "VirtualMachineScaleSets"
 
-    # Basic networking
-    vnet_subnet_id = null
+    # Enable host encryption for security compliance
+    enable_host_encryption = true
+
+    # Use private subnet
+    vnet_subnet_id = azurerm_subnet.aks.id
   }
 
   # System-assigned managed identity for security compliance
@@ -110,7 +130,9 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   # Basic configuration - no advanced features for demo
   network_profile {
-    network_plugin = "kubenet"
+    network_plugin      = "kubenet"
+    service_cidr        = var.aks_service_cidr
+    dns_service_ip      = var.aks_dns_service_ip
   }
 
   # Enable RBAC for security compliance
@@ -119,16 +141,22 @@ resource "azurerm_kubernetes_cluster" "main" {
   tags = var.tags
 }
 
-# RBAC Role Assignments for AKS
-resource "azurerm_role_assignment" "acr_pull" {
-  scope                = azurerm_container_registry.main.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
-
-  depends_on = [azurerm_kubernetes_cluster.main]
-}
+# RBAC Role Assignments for AKS (moved to end of file with private endpoints)
 
 # Kubernetes Resources for FastAPI Application Deployment
+
+# Null resource to ensure AKS cluster is fully ready before creating Kubernetes resources
+resource "null_resource" "wait_for_aks" {
+  provisioner "local-exec" {
+    command = "sleep 30"  # Wait 30 seconds for AKS to be fully ready
+  }
+  
+  depends_on = [
+    azurerm_kubernetes_cluster.main,
+    azurerm_role_assignment.storage_file_smb_contributor,
+    azurerm_role_assignment.aks_acr_pull
+  ]
+}
 
 # StorageClass for Azure Files CSI driver
 resource "kubernetes_storage_class_v1" "azure_file" {
@@ -140,11 +168,19 @@ resource "kubernetes_storage_class_v1" "azure_file" {
   reclaim_policy         = "Retain"
   volume_binding_mode    = "Immediate"
   parameters = {
-    skuName = "Standard_LRS"
+    skuName              = "Standard_LRS"
+    storageAccount       = azurerm_storage_account.main.name
+    resourceGroup        = azurerm_resource_group.main.name
+    # Use managed identity for secure access
+    useDataPlaneAPI      = "true"
   }
   mount_options = ["file_mode=0777", "dir_mode=0777", "mfsymlinks", "uid=1001", "gid=1001", "nobrl"]
 
-  depends_on = [azurerm_kubernetes_cluster.main]
+  depends_on = [
+    null_resource.wait_for_aks,
+    azurerm_storage_account.main,
+    azurerm_role_assignment.storage_file_smb_contributor
+  ]
 }
 
 # PersistentVolume for Azure Files
@@ -162,12 +198,12 @@ resource "kubernetes_persistent_volume_v1" "azure_file_pv" {
     persistent_volume_source {
       csi {
         driver        = "file.csi.azure.com"
-        volume_handle = "${azurerm_storage_account.main.name}#${azurerm_storage_share.main.name}"
+        volume_handle = "${azurerm_storage_account.main.name}#${azapi_resource.main.name}"
         read_only     = false
         volume_attributes = {
           resourceGroup  = azurerm_resource_group.main.name
           storageAccount = azurerm_storage_account.main.name
-          shareName      = azurerm_storage_share.main.name
+          shareName      = azapi_resource.main.name
         }
         # Removed node_stage_secret_ref - using Azure AD authentication via workload identity
       }
@@ -175,8 +211,8 @@ resource "kubernetes_persistent_volume_v1" "azure_file_pv" {
   }
 
   depends_on = [
-    azurerm_kubernetes_cluster.main,
-    azurerm_storage_share.main,
+    null_resource.wait_for_aks,
+    azapi_resource.main,
     kubernetes_storage_class_v1.azure_file
   ]
 }
@@ -216,7 +252,7 @@ resource "kubernetes_secret_v1" "azure_storage_secret" {
 
   type = "Opaque"
 
-  depends_on = [azurerm_kubernetes_cluster.main]
+  depends_on = [null_resource.wait_for_aks]
 }
 
 # Service Account for workload identity
@@ -233,7 +269,7 @@ resource "kubernetes_service_account_v1" "fastapi_serviceaccount" {
   }
 
   depends_on = [
-    azurerm_kubernetes_cluster.main,
+    null_resource.wait_for_aks,
     azurerm_user_assigned_identity.aks_workload_identity
   ]
 }
@@ -259,11 +295,11 @@ port = 8000
 [storage]
 data_path = "/data"
 azure_storage_account = "${azurerm_storage_account.main.name}"
-azure_file_share = "${azurerm_storage_share.main.name}"
+azure_file_share = "${azapi_resource.main.name}"
 EOF
   }
 
-  depends_on = [azurerm_kubernetes_cluster.main]
+  depends_on = [null_resource.wait_for_aks]
 }
 
 # Kubernetes Deployment for FastAPI application
@@ -373,9 +409,7 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
           }
         }
 
-        image_pull_secrets {
-          name = kubernetes_secret_v1.acr_secret.metadata[0].name
-        }
+        # No image_pull_secrets needed - AKS uses managed identity for ACR access
       }
     }
   }
@@ -383,34 +417,12 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
   depends_on = [
     kubernetes_persistent_volume_claim_v1.fastapi_pvc,
     kubernetes_config_map_v1.fastapi_config,
-    kubernetes_secret_v1.acr_secret,
     kubernetes_service_account_v1.fastapi_serviceaccount
   ]
 }
 
-# Secret for ACR authentication
-resource "kubernetes_secret_v1" "acr_secret" {
-  metadata {
-    name      = "acr-secret"
-    namespace = "default"
-  }
-
-  type = "kubernetes.io/dockerconfigjson"
-
-  data = {
-    ".dockerconfigjson" = jsonencode({
-      auths = {
-        "${azurerm_container_registry.main.login_server}" = {
-          "username" = azurerm_container_registry.main.admin_username
-          "password" = azurerm_container_registry.main.admin_password
-          "auth"     = base64encode("${azurerm_container_registry.main.admin_username}:${azurerm_container_registry.main.admin_password}")
-        }
-      }
-    })
-  }
-
-  depends_on = [azurerm_kubernetes_cluster.main]
-}
+# No ACR secret needed - using managed identity integration
+# AKS will automatically authenticate to ACR using the kubelet managed identity
 
 # Kubernetes Service for internal connectivity
 resource "kubernetes_service_v1" "fastapi_service" {
@@ -546,4 +558,92 @@ resource "azurerm_federated_identity_credential" "aks_workload_identity" {
     azurerm_kubernetes_cluster.main,
     azurerm_user_assigned_identity.aks_workload_identity
   ]
+}
+
+# Private DNS Zone for Storage Account
+resource "azurerm_private_dns_zone" "storage" {
+  name                = "privatelink.file.core.windows.net"
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = var.tags
+}
+
+# Private DNS Zone for Container Registry
+resource "azurerm_private_dns_zone" "acr" {
+  name                = "privatelink.azurecr.io"
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = var.tags
+}
+
+# Link DNS zones to VNet
+resource "azurerm_private_dns_zone_virtual_network_link" "storage" {
+  name                  = "${var.project_name}-storage-dns-link"
+  resource_group_name   = azurerm_resource_group.main.name
+  private_dns_zone_name = azurerm_private_dns_zone.storage.name
+  virtual_network_id    = azurerm_virtual_network.main.id
+
+  tags = var.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "acr" {
+  name                  = "${var.project_name}-acr-dns-link"
+  resource_group_name   = azurerm_resource_group.main.name
+  private_dns_zone_name = azurerm_private_dns_zone.acr.name
+  virtual_network_id    = azurerm_virtual_network.main.id
+
+  tags = var.tags
+}
+
+# Private Endpoint for Storage Account
+resource "azurerm_private_endpoint" "storage" {
+  name                = "${var.project_name}-storage-pe"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  subnet_id           = azurerm_subnet.private_endpoints.id
+
+  private_service_connection {
+    name                           = "${var.project_name}-storage-psc"
+    private_connection_resource_id = azurerm_storage_account.main.id
+    subresource_names              = ["file"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "storage-dns-zone-group"
+    private_dns_zone_ids = [azurerm_private_dns_zone.storage.id]
+  }
+
+  tags = var.tags
+}
+
+# Private Endpoint for Container Registry
+resource "azurerm_private_endpoint" "acr" {
+  name                = "${var.project_name}-acr-pe"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  subnet_id           = azurerm_subnet.private_endpoints.id
+
+  private_service_connection {
+    name                           = "${var.project_name}-acr-psc"
+    private_connection_resource_id = azurerm_container_registry.main.id
+    subresource_names              = ["registry"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "acr-dns-zone-group"
+    private_dns_zone_ids = [azurerm_private_dns_zone.acr.id]
+  }
+
+  tags = var.tags
+}
+
+# Role assignment for AKS to pull from ACR using managed identity
+resource "azurerm_role_assignment" "aks_acr_pull" {
+  scope                = azurerm_container_registry.main.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
+
+  depends_on = [azurerm_kubernetes_cluster.main]
 }
