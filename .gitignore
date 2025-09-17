@@ -212,3 +212,4 @@ outputs.json
 *.tfplan
 *.tfstate
 *.tfstate.backup
+deployment.plan
