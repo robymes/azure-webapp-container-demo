@@ -215,3 +215,4 @@ outputs.json
 *.tfstate.backup
 terraform*backup
 deployment.plan
+/temp
