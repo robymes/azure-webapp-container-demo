@@ -96,6 +96,70 @@ resource "azurerm_subnet" "private_endpoints" {
   address_prefixes     = var.private_endpoint_subnet_address_prefix
 }
 
+# Gateway Subnet for VPN Gateway (must be named "GatewaySubnet")
+resource "azurerm_subnet" "gateway" {
+  name                 = "GatewaySubnet"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = var.gateway_subnet_address_prefix
+}
+
+# Public IP for VPN Gateway
+resource "azurerm_public_ip" "vpn_gateway" {
+  name                = "${var.project_name}-vpn-gateway-pip"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  
+  tags = var.tags
+}
+
+# VPN Gateway for Point-to-Site connections
+resource "azurerm_virtual_network_gateway" "vpn" {
+  name                = "${var.project_name}-vpn-gateway"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  type     = "Vpn"
+  vpn_type = "RouteBased"
+
+  active_active = false
+  enable_bgp    = false
+  sku           = var.vpn_gateway_sku
+  generation    = var.vpn_gateway_generation
+
+  ip_configuration {
+    name                          = "vnetGatewayConfig"
+    public_ip_address_id          = azurerm_public_ip.vpn_gateway.id
+    private_ip_address_allocation = "Dynamic"
+    subnet_id                     = azurerm_subnet.gateway.id
+  }
+
+  vpn_client_configuration {
+    address_space = var.vpn_client_address_space
+
+    root_certificate {
+      name = "P2SRootCert"
+      # This should be replaced with your actual root certificate data
+      # For demo purposes, using a placeholder
+      public_cert_data = <<EOF
+MIIC2jCCAcKgAwIBAgIQRCpY7z7lzm8v+EgA2G7bKzANBgkqhkiG9w0BAQsFADA
+SAMPLE_CERTIFICATE_DATA_REPLACE_WITH_ACTUAL_CERT
+EOF
+    }
+
+    vpn_client_protocols = ["OpenVPN", "IkeV2"]
+  }
+
+  tags = var.tags
+
+  depends_on = [
+    azurerm_public_ip.vpn_gateway,
+    azurerm_subnet.gateway
+  ]
+}
+
 # AKS Cluster with minimal configuration for demo
 resource "azurerm_kubernetes_cluster" "main" {
   name                = "${var.project_name}-aks"
@@ -109,7 +173,7 @@ resource "azurerm_kubernetes_cluster" "main" {
   default_node_pool {
     name       = "default"
     node_count = 1
-    vm_size    = "Standard_B2s"
+    vm_size    = "Standard_D4_v5"
     type       = "VirtualMachineScaleSets"
 
     # Enable host encryption for security compliance
@@ -160,6 +224,8 @@ resource "null_resource" "wait_for_aks" {
 
 # StorageClass for Azure Files CSI driver
 resource "kubernetes_storage_class_v1" "azure_file" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name = "azure-file"
   }
@@ -185,6 +251,8 @@ resource "kubernetes_storage_class_v1" "azure_file" {
 
 # PersistentVolume for Azure Files
 resource "kubernetes_persistent_volume_v1" "azure_file_pv" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name = "fastapi-azure-file-pv"
   }
@@ -193,7 +261,7 @@ resource "kubernetes_persistent_volume_v1" "azure_file_pv" {
       storage = "${var.file_share_quota}Gi"
     }
     access_modes       = ["ReadWriteMany"]
-    storage_class_name = kubernetes_storage_class_v1.azure_file.metadata[0].name
+    storage_class_name = kubernetes_storage_class_v1.azure_file[0].metadata[0].name
 
     persistent_volume_source {
       csi {
@@ -219,19 +287,21 @@ resource "kubernetes_persistent_volume_v1" "azure_file_pv" {
 
 # PersistentVolumeClaim
 resource "kubernetes_persistent_volume_claim_v1" "fastapi_pvc" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "fastapi-pvc"
     namespace = "default"
   }
   spec {
     access_modes       = ["ReadWriteMany"]
-    storage_class_name = kubernetes_storage_class_v1.azure_file.metadata[0].name
+    storage_class_name = kubernetes_storage_class_v1.azure_file[0].metadata[0].name
     resources {
       requests = {
         storage = "${var.file_share_quota}Gi"
       }
     }
-    volume_name = kubernetes_persistent_volume_v1.azure_file_pv.metadata[0].name
+    volume_name = kubernetes_persistent_volume_v1.azure_file_pv[0].metadata[0].name
   }
 
   depends_on = [kubernetes_persistent_volume_v1.azure_file_pv]
@@ -240,6 +310,8 @@ resource "kubernetes_persistent_volume_claim_v1" "fastapi_pvc" {
 # Secret for Azure Storage Account - Using Azure AD authentication
 # No storage account key required with workload identity
 resource "kubernetes_secret_v1" "azure_storage_secret" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "azure-storage-secret"
     namespace = "default"
@@ -257,6 +329,8 @@ resource "kubernetes_secret_v1" "azure_storage_secret" {
 
 # Service Account for workload identity
 resource "kubernetes_service_account_v1" "fastapi_serviceaccount" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "fastapi-serviceaccount"
     namespace = "default"
@@ -276,6 +350,8 @@ resource "kubernetes_service_account_v1" "fastapi_serviceaccount" {
 
 # ConfigMap for FastAPI application configuration
 resource "kubernetes_config_map_v1" "fastapi_config" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "fastapi-config"
     namespace = "default"
@@ -304,6 +380,8 @@ EOF
 
 # Kubernetes Deployment for FastAPI application
 resource "kubernetes_deployment_v1" "fastapi_app" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "fastapi-app"
     namespace = "default"
@@ -329,7 +407,7 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
       }
 
       spec {
-        service_account_name = kubernetes_service_account_v1.fastapi_serviceaccount.metadata[0].name
+        service_account_name = kubernetes_service_account_v1.fastapi_serviceaccount[0].metadata[0].name
 
         container {
           image = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
@@ -398,14 +476,14 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
         volume {
           name = "data-volume"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.fastapi_pvc.metadata[0].name
+            claim_name = kubernetes_persistent_volume_claim_v1.fastapi_pvc[0].metadata[0].name
           }
         }
 
         volume {
           name = "config-volume"
           config_map {
-            name = kubernetes_config_map_v1.fastapi_config.metadata[0].name
+            name = kubernetes_config_map_v1.fastapi_config[0].metadata[0].name
           }
         }
 
@@ -426,6 +504,8 @@ resource "kubernetes_deployment_v1" "fastapi_app" {
 
 # Kubernetes Service for internal connectivity
 resource "kubernetes_service_v1" "fastapi_service" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "fastapi-service"
     namespace = "default"
@@ -454,6 +534,8 @@ resource "kubernetes_service_v1" "fastapi_service" {
 
 # LoadBalancer Service for external access
 resource "kubernetes_service_v1" "fastapi_loadbalancer" {
+  count = var.aks_cluster_exists ? 1 : 0
+  
   metadata {
     name      = "fastapi-loadbalancer"
     namespace = "default"

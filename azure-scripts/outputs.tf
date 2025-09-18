@@ -46,7 +46,7 @@ output "aks_cluster_fqdn" {
 
 output "aks_cluster_kube_config" {
   description = "Kubeconfig for the AKS cluster"
-  value       = azurerm_kubernetes_cluster.main.kube_config_raw
+  value       = var.aks_cluster_exists ? azurerm_kubernetes_cluster.main.kube_config_raw : null
   sensitive   = true
 }
 
@@ -109,12 +109,18 @@ output "deployment_info" {
 # Kubernetes Application Access Information
 output "application_access" {
   description = "External access information for the FastAPI application"
-  value = {
-    loadbalancer_service = kubernetes_service_v1.fastapi_loadbalancer.metadata[0].name
+  value = var.aks_cluster_exists ? {
+    loadbalancer_service = kubernetes_service_v1.fastapi_loadbalancer[0].metadata[0].name
     external_ip_note     = "Run 'kubectl get svc fastapi-loadbalancer' to get the external IP"
     kubectl_command      = "kubectl get svc fastapi-loadbalancer -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
     application_url      = "http://<EXTERNAL_IP>"
     health_check_url     = "http://<EXTERNAL_IP>/health"
+  } : {
+    loadbalancer_service = "Not deployed - set aks_cluster_exists=true"
+    external_ip_note     = "Kubernetes resources not deployed in bootstrap mode"
+    kubectl_command      = "N/A"
+    application_url      = "N/A"
+    health_check_url     = "N/A"
   }
 }
 
@@ -148,14 +154,24 @@ output "acr_name" {
 # Kubernetes Configuration Summary
 output "kubernetes_deployment_summary" {
   description = "Summary of Kubernetes resources deployed"
-  value = {
-    deployment_name         = kubernetes_deployment_v1.fastapi_app.metadata[0].name
-    service_name            = kubernetes_service_v1.fastapi_service.metadata[0].name
-    loadbalancer_service    = kubernetes_service_v1.fastapi_loadbalancer.metadata[0].name
-    persistent_volume_claim = kubernetes_persistent_volume_claim_v1.fastapi_pvc.metadata[0].name
-    config_map              = kubernetes_config_map_v1.fastapi_config.metadata[0].name
-    storage_class           = kubernetes_storage_class_v1.azure_file.metadata[0].name
-    replicas                = kubernetes_deployment_v1.fastapi_app.spec[0].replicas
+  value = var.aks_cluster_exists ? {
+    deployment_name         = kubernetes_deployment_v1.fastapi_app[0].metadata[0].name
+    service_name            = kubernetes_service_v1.fastapi_service[0].metadata[0].name
+    loadbalancer_service    = kubernetes_service_v1.fastapi_loadbalancer[0].metadata[0].name
+    persistent_volume_claim = kubernetes_persistent_volume_claim_v1.fastapi_pvc[0].metadata[0].name
+    config_map              = kubernetes_config_map_v1.fastapi_config[0].metadata[0].name
+    storage_class           = kubernetes_storage_class_v1.azure_file[0].metadata[0].name
+    replicas                = kubernetes_deployment_v1.fastapi_app[0].spec[0].replicas
+    container_image         = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
+    data_mount_path         = "/data"
+  } : {
+    deployment_name         = "Not deployed - set aks_cluster_exists=true"
+    service_name            = "Not deployed - set aks_cluster_exists=true"
+    loadbalancer_service    = "Not deployed - set aks_cluster_exists=true"
+    persistent_volume_claim = "Not deployed - set aks_cluster_exists=true"
+    config_map              = "Not deployed - set aks_cluster_exists=true"
+    storage_class           = "Not deployed - set aks_cluster_exists=true"
+    replicas                = "N/A"
     container_image         = "${azurerm_container_registry.main.login_server}/fastapi-app:latest"
     data_mount_path         = "/data"
   }
@@ -192,5 +208,38 @@ output "private_dns_zones" {
   value = {
     storage = azurerm_private_dns_zone.storage.name
     acr     = azurerm_private_dns_zone.acr.name
+  }
+}
+
+# VPN Gateway outputs
+output "vpn_gateway_public_ip" {
+  description = "Public IP address of the VPN Gateway"
+  value       = azurerm_public_ip.vpn_gateway.ip_address
+}
+
+output "vpn_gateway_name" {
+  description = "Name of the VPN Gateway"
+  value       = azurerm_virtual_network_gateway.vpn.name
+}
+
+output "vpn_client_configuration" {
+  description = "VPN client configuration information"
+  value = {
+    gateway_public_ip     = azurerm_public_ip.vpn_gateway.ip_address
+    client_address_space  = var.vpn_client_address_space
+    protocols             = ["OpenVPN", "IkeV2"]
+    gateway_sku          = var.vpn_gateway_sku
+    certificate_required = "You need to replace the placeholder certificate with your actual root certificate"
+  }
+}
+
+output "vpn_connection_instructions" {
+  description = "Instructions for connecting to the VPN"
+  value = {
+    step1 = "Generate a root certificate and replace the placeholder in the VPN Gateway configuration"
+    step2 = "Download the VPN client configuration from Azure Portal"
+    step3 = "Install the VPN client on your laptop"
+    step4 = "Connect using the downloaded configuration"
+    note  = "The current configuration includes a placeholder certificate that must be replaced"
   }
 }

@@ -47,20 +47,26 @@ provider "azapi" {
   # Configuration will be inherited from azurerm provider
 }
 
-# Kubernetes provider configuration
-# This configuration will work during the entire terraform lifecycle
+# Kubernetes provider configuration using direct resource reference
+# This eliminates timing issues by using the resource directly instead of a data source
 provider "kubernetes" {
-  host                   = try(azurerm_kubernetes_cluster.main.kube_config.0.host, "")
-  client_certificate     = try(base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_certificate), "")
-  client_key            = try(base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_key), "")
-  cluster_ca_certificate = try(base64decode(azurerm_kubernetes_cluster.main.kube_config.0.cluster_ca_certificate), "")
+  host                   = var.aks_cluster_exists ? azurerm_kubernetes_cluster.main.kube_config.0.host : "https://127.0.0.1"
+  client_certificate     = var.aks_cluster_exists ? base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_certificate) : null
+  client_key            = var.aks_cluster_exists ? base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_key) : null
+  cluster_ca_certificate = var.aks_cluster_exists ? base64decode(azurerm_kubernetes_cluster.main.kube_config.0.cluster_ca_certificate) : null
+  
+  # Skip TLS verification when using placeholder values
+  insecure = !var.aks_cluster_exists
 }
 
 provider "helm" {
   kubernetes {
-    host                   = try(azurerm_kubernetes_cluster.main.kube_config.0.host, "")
-    client_certificate     = try(base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_certificate), "")
-    client_key            = try(base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_key), "")
-    cluster_ca_certificate = try(base64decode(azurerm_kubernetes_cluster.main.kube_config.0.cluster_ca_certificate), "")
+    host                   = var.aks_cluster_exists ? azurerm_kubernetes_cluster.main.kube_config.0.host : "https://127.0.0.1"
+    client_certificate     = var.aks_cluster_exists ? base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_certificate) : null
+    client_key            = var.aks_cluster_exists ? base64decode(azurerm_kubernetes_cluster.main.kube_config.0.client_key) : null
+    cluster_ca_certificate = var.aks_cluster_exists ? base64decode(azurerm_kubernetes_cluster.main.kube_config.0.cluster_ca_certificate) : null
+    
+    # Skip TLS verification when using placeholder values
+    insecure = !var.aks_cluster_exists
   }
 }

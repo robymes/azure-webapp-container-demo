@@ -13,7 +13,7 @@ variable "resource_group_name" {
 variable "location" {
   description = "Azure region for resources"
   type        = string
-  default     = "West Europe"
+  default     = "Italy North"
 }
 
 
@@ -124,4 +124,36 @@ variable "aks_dns_service_ip" {
   type        = string
   default     = "172.16.0.10"
 }
+
+# VPN Gateway Variables
+variable "gateway_subnet_address_prefix" {
+  description = "Address prefix for the Gateway subnet (required for VPN Gateway)"
+  type        = list(string)
+  default     = ["10.0.3.0/24"]
+}
+
+variable "vpn_client_address_space" {
+  description = "Address space for VPN clients"
+  type        = list(string)
+  default     = ["192.168.1.0/24"]
+}
+
+variable "vpn_gateway_sku" {
+  description = "SKU for the VPN Gateway"
+  type        = string
+  default     = "VpnGw1"
+}
+variable "vpn_gateway_generation" {
+  description = "Generation for the VPN Gateway"
+  type        = string
+  default     = "Generation1"
+}
+
+# Bootstrap control variable for Kubernetes providers
+variable "aks_cluster_exists" {
+  description = "Whether the AKS cluster exists (used to control provider initialization during bootstrap)"
+  type        = bool
+  default     = false
+}
+
 
