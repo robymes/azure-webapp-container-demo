@@ -12,6 +12,7 @@ The project leverages a combination of cloud services, containerization, and mod
 
 - **Azure Kubernetes Service (AKS):** Provides a managed Kubernetes environment in Azure for scalable container orchestration.
 - **Azure Storage Account:** Used for persistent storage of data and container state required by the platform.
+- **Azure Container Registry:** Used to host Docker images.
 - **Docker:** Enables containerization of the application components for consistent development and deployment environments.
 - **Python:** The primary programming language employed for backend logic and data integration.
 - **FastAPI:** A modern, high-performance web framework for building APIs with Python, supporting asynchronous operations and easy scalability.
@@ -64,6 +65,13 @@ The deployment infrastructure as code strategy mandates a careful approach:
 - Subsequent releases must assume an **existing environment state** and perform **incremental upgrades** rather than full reconstructions.
 - This approach ensures minimal downtime, state preservation, and enables smooth environment evolution in production settings.
 - Terraform configuration should be modular and capable of detecting current environment state to plan appropriate upgrade paths.
+- PoC Azure environment should have the following charachteristics:
+  - Subscription: already logged in with az CLI
+  - Resource Group name: jkl-open-data-platform
+  - Region: Italy North
+  - Docker container data volume **MUST** be persistent using the Azure Storage Account
+  - Virtual newtork should contain a VPN Gateway
+  - Split pure Terraform infrastructure provisioning from Docker image registry push and AKS pod creation
 
 ## Azure Security Policies
 
@@ -74,4 +82,4 @@ The actual Azure environment is affected by some strict security policies that *
 - Every other Azure service which need access to an Azure Storage Cccount must use private link and managed identities
 - Temp disks and cache for agent node pools in Azure Kubernetes Service (AKS) clusters must be encrypted at host
 
-These limitations are hard to manage: you must perform a web search and use the **microsoft-learn** MCP server in order to properly design and implement a successful deployment strategy with Terraform.
+These limitations are hard to manage: you must perform a web search and use the **microsoft-learn** MCP server in order to properly design and implement a successful deployment strategy with Terraform, especially when deciding in which sequential order Azure services must be created and/or updated.
